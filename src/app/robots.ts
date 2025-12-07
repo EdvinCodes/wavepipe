@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: '/api/', // No queremos que Google indexe nuestras APIs
     },
-    sitemap: 'https://wavepipe.vercel.app/sitemap.xml', // Cambia por tu dominio futuro
+    sitemap: 'https://wavepipe.onrender.com/sitemap.xml', // Cambia por tu dominio futuro
   };
 }

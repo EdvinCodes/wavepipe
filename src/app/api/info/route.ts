@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 
+// --- DEFINICIÓN DE TIPOS ---
+
 // Tipos de respuesta para el Frontend
 type VideoInfo = {
   type: 'video';
@@ -49,15 +51,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // DETECCIÓN INTELIGENTE DE SISTEMA OPERATIVO
+    // 1. DETECCIÓN DE SISTEMA OPERATIVO (Crucial para Docker vs Windows)
     const isWindows = process.platform === 'win32';
-    const binaryName = isWindows ? 'yt-dlp.exe' : 'yt-dlp'; // En Linux no lleva .exe
-    
+    const binaryName = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
     const ytDlpPath = path.join(process.cwd(), 'bin', binaryName);
 
+    console.log(`[API Info] Usando motor: ${ytDlpPath}`);
+
+    // 2. ARGUMENTOS
     const args = [
-      '--dump-single-json',
-      '--flat-playlist',
+      '--dump-single-json', // Devuelve un JSON limpio
+      '--flat-playlist',    // Rápido para listas
       '--no-warnings',
       '--no-call-home',
       url
@@ -67,6 +71,7 @@ export async function GET(request: NextRequest) {
         args.push('--yes-playlist');
     }
 
+    // 3. EJECUCIÓN DEL PROCESO
     const child = spawn(ytDlpPath, args);
 
     const chunks: Buffer[] = [];
@@ -79,10 +84,11 @@ export async function GET(request: NextRequest) {
       child.on('close', (code) => {
         if (code === 0) resolve(true);
         else {
+           // Si hay datos en stdout, a veces ignoramos el código de error no-fatal
            if (chunks.length > 0) resolve(true);
            else {
              const errorMsg = Buffer.concat(errorChunks).toString('utf-8');
-             reject(new Error(`yt-dlp error: ${errorMsg}`));
+             reject(new Error(`yt-dlp error code ${code}: ${errorMsg}`));
            }
         }
       });
@@ -91,15 +97,21 @@ export async function GET(request: NextRequest) {
 
     const fullOutput = Buffer.concat(chunks).toString('utf-8');
     
+    // 4. PARSEO DE JSON
     let details;
     try {
+        if (!fullOutput) throw new Error("Salida vacía de yt-dlp");
         details = JSON.parse(fullOutput);
     } catch {
-        console.error("Error parseando JSON final:", fullOutput.substring(0, 200) + "...");
+        console.error("Error parseando JSON. Output recibido:", fullOutput.substring(0, 200));
         throw new Error("La respuesta de YouTube no fue un JSON válido.");
     }
 
-    // --- LÓGICA DE RESPUESTA ---
+    if (!details) {
+        throw new Error("No se recibieron detalles del vídeo.");
+    }
+
+    // 5. MAPEO DE DATOS (Video vs Playlist)
 
     if (details._type === 'playlist' || (details.entries && details.entries.length > 0)) {
       
@@ -111,7 +123,6 @@ export async function GET(request: NextRequest) {
                    || details.entries?.[0]?.thumbnails?.[0]?.url 
                    || "https://i.ytimg.com/img/no_thumbnail.jpg", 
         totalVideos: details.entry_count || details.entries?.length || 0,
-        // CORREGIDO: Usamos la interfaz RawTrack en lugar de any
         tracks: (details.entries || []).map((item: RawTrack) => ({
           id: item.id,
           title: item.title,
@@ -134,6 +145,7 @@ export async function GET(request: NextRequest) {
     }
 
   } catch (error: unknown) {
+    // Manejo de error tipado 'unknown' para el linter
     let errorMessage = "Error desconocido";
     if (error instanceof Error) {
         errorMessage = error.message;
@@ -141,7 +153,8 @@ export async function GET(request: NextRequest) {
         errorMessage = error;
     }
 
-    console.error('Error procesando info:', errorMessage);
+    console.error('[API Error]:', errorMessage);
+    
     return NextResponse.json({ 
       error: 'Error al obtener datos.',
       details: errorMessage 

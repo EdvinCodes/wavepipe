@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://wavepipe.vercel.app", // (Cambia esto cuando tengas dominio real)
+    url: "https://wavepipe.onrender.com", 
     title: "WavePipe | Ultimate YouTube Downloader",
     description: "The cleanest downloader on the web. No ads, just waves.",
     siteName: "WavePipe",

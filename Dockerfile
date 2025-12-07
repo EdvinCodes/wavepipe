@@ -1,30 +1,33 @@
-# 1. Usamos Node 20 (Requisito de Next.js 14/15)
+# 1. Usamos Node 20 (Alpine)
 FROM node:20-alpine
 
-# 2. Instalamos las herramientas necesarias (Python, FFmpeg y Curl)
-# Nota: En Alpine 20 a veces python3 se llama simplemente python, pero python3 suele funcionar.
+# 2. Instalamos Python3 y FFmpeg
 RUN apk add --no-cache python3 ffmpeg curl
 
-# 3. Preparamos la carpeta de trabajo
+# --- LA LÍNEA MÁGICA ---
+# Creamos un enlace para que el comando 'python' funcione redirigiendo a 'python3'
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+# 3. Preparamos carpeta
 WORKDIR /app
 
-# 4. Copiamos los archivos de dependencias
+# 4. Copiamos dependencias
 COPY package.json pnpm-lock.yaml* ./
 
-# 5. Instalamos pnpm y las dependencias del proyecto
+# 5. Instalamos
 RUN npm install -g pnpm && pnpm install --frozen-lockfile
 
-# 6. Copiamos todo el código fuente
+# 6. Copiamos código
 COPY . .
 
-# 7. TRUCO DE MAGIA: Descargamos yt-dlp versión LINUX
+# 7. Descargamos yt-dlp para Linux
 RUN mkdir -p bin
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o bin/yt-dlp
 RUN chmod +x bin/yt-dlp
 
-# 8. Construimos la aplicación de Next.js
+# 8. Build
 RUN pnpm build
 
-# 9. Exponemos el puerto y arrancamos
+# 9. Start
 EXPOSE 3000
 CMD ["pnpm", "start"]
