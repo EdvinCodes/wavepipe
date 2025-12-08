@@ -32,6 +32,9 @@ importers:
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.4.0
+      typescript:
+        specifier: ^5
+        version: 5.9.3
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4
@@ -54,9 +57,6 @@ importers:
       tailwindcss:
         specifier: ^4
         version: 4.1.17
-      typescript:
-        specifier: ^5
-        version: 5.9.3
 
 packages:
 
