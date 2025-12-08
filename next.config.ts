@@ -9,13 +9,10 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
-        hostname: 'yt3.ggpht.com', // A veces las miniaturas de canales vienen de aquí
+        hostname: 'yt3.ggpht.com', // Miniaturas de canales
       },
     ],
   },
-  // ESTA ES LA MAGIA QUE SOLUCIONA EL ERROR:
-  serverExternalPackages: ['ytpl', '@distube/ytdl-core', 'fluent-ffmpeg'],
 };
 
 export default nextConfig;
-
