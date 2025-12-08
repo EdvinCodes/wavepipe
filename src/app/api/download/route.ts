@@ -48,10 +48,14 @@ export async function GET(request: NextRequest) {
   // 4. Argumentos de Calidad (Metadatos y Miniatura)
   const args = [
     '--no-warnings',
-    '--no-call-home',
     '--output', tempFilePathTemplate, // Guardamos en disco temporalmente
     '--embed-thumbnail',              // <--- CLAVE: Incrustar carátula
     '--add-metadata',                 // <--- CLAVE: Incrustar Artista/Título
+
+    // --- NUEVO: DISFRAZ ANTI-BOT ---
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    '--extractor-args', 'youtube:player_client=android',
+
     url
   ];
 
