@@ -53,12 +53,10 @@ export async function GET(request: NextRequest) {
     '--dump-single-json',
     '--flat-playlist',
     '--no-warnings',
-    '--no-check-certificate',
-    '--prefer-free-formats',
     
-    // CAMBIO CLAVE: Usamos el cliente de iOS (iPhone)
-    // Y quitamos el --user-agent manual para no contradecirnos
-    '--extractor-args', 'youtube:player_client=ios',
+    // TRUCO 1: Falsificar ser un navegador real
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  
     
     url,
   ];
