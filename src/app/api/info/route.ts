@@ -6,7 +6,6 @@ import util from 'util';
 
 const execFileAsync = util.promisify(execFile);
 
-// Tipos para TypeScript
 interface VideoInfo {
   title: string;
   author: string;
@@ -22,7 +21,6 @@ interface TrackInfo {
   duration: string;
 }
 
-// Formatea segundos a hh:mm:ss o mm:ss
 const formatDuration = (seconds: number): string => {
   if (!seconds) return '00:00';
   const hh = Math.floor(seconds / 3600);
@@ -33,7 +31,6 @@ const formatDuration = (seconds: number): string => {
     : `${mm}:${ss.toString().padStart(2, '0')}`;
 };
 
-// Función para validar URL (solo YouTube por ejemplo)
 const isValidUrl = (url: string) => {
   return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(url);
 };
@@ -48,28 +45,42 @@ export async function GET(request: NextRequest) {
   const ytPath = path.join(process.cwd(), 'bin', binName);
 
   if (!fs.existsSync(ytPath)) {
-    return NextResponse.json({ error: 'yt-dlp no encontrado' }, { status: 500 });
+    return NextResponse.json({ error: 'yt-dlp no encontrado en el servidor' }, { status: 500 });
   }
 
+  // --- ARREGLO DEL BLOQUEO DE YOUTUBE ---
   const args = [
     '--dump-single-json',
     '--flat-playlist',
     '--no-warnings',
-    '--no-call-home',
+    // '--no-call-home', <--- BORRADO (Estaba obsoleto)
+    
+    // TRUCO 1: Falsificar ser un navegador real
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    
+    // TRUCO 2: Usar la API de Android (Se salta el "Sign in to confirm you're not a bot")
+    '--extractor-args', 'youtube:player_client=android',
+    
     url,
   ];
 
   if (url.includes('list=')) args.push('--yes-playlist');
 
   try {
-    const { stdout } = await execFileAsync(ytPath, args, { maxBuffer: 1024 * 1024 * 10 }); // 10MB buffer
+    // Aumentamos el buffer por si la respuesta JSON es gigante
+    const { stdout } = await execFileAsync(ytPath, args, { maxBuffer: 1024 * 1024 * 50 });
+    
+    if (!stdout) throw new Error("Salida vacía de yt-dlp");
+
     const data = JSON.parse(stdout);
 
     const isPlaylist = data._type === 'playlist' || !!data.entries;
 
+    // Buscamos la mejor miniatura de forma segura
     const thumbnail =
       data.thumbnails?.at(-1)?.url ??
       data.entries?.[0]?.thumbnails?.[0]?.url ??
+      data.thumbnail ?? 
       '';
 
     const info: VideoInfo = {
@@ -98,9 +109,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(info);
   } catch (err: any) {
-    console.error('API Info Error:', { message: err.message, url, args });
+    // Mejoramos el log de error para que Render nos diga la verdad
+    const errorMsg = err.stderr || err.message || 'Error desconocido';
+    console.error('API Info Error:', errorMsg);
+    
     return NextResponse.json(
-      { error: 'Falló al obtener info', details: err.message },
+      { error: 'Falló al obtener info', details: errorMsg },
       { status: 500 }
     );
   }
