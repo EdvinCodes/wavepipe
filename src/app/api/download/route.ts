@@ -1,148 +1,125 @@
-// src/app/api/download/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { promisify } from 'util';
-import { randomUUID } from 'crypto';
-import stream from 'stream';
-const pipeline = promisify(stream.pipeline);
+
+// Promisify para poder usar await con unlink (borrar)
 const unlinkAsync = promisify(fs.unlink);
 
-export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // valor aconsejable para plataforma (s)
-
-function sanitizeFilename(name: string) {
-  return name.replace(/[^\w\s\-\.]/gi, '').trim() || 'audio_track';
-}
-
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const url = searchParams.get('url');
-  const format = (searchParams.get('format') || 'mp3').toLowerCase();
-  if (!url) return NextResponse.json({ error: 'URL inválida' }, { status: 400 });
+  const url = request.nextUrl.searchParams.get('url');
+  const format = request.nextUrl.searchParams.get('format') || 'mp3';
 
-  const tempId = randomUUID();
+  if (!url) return NextResponse.json({ error: 'URL requerida' }, { status: 400 });
+
+  // 1. Detectar binario
   const isWindows = process.platform === 'win32';
-  const cmd = isWindows ? path.join(process.cwd(), 'bin', 'yt-dlp.exe') : 'python3';
-  const tmpDir = os.tmpdir();
+  const binName = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
+  const ytPath = path.join(process.cwd(), 'bin', binName);
 
-  // Preparar args para obtener título
-  const titleArgs = isWindows
-    ? ['--print', 'title', '--no-warnings', url]
-    : ['-m', 'yt_dlp', '--print', 'title', '--no-warnings', url];
-  const spawnOptions = { env: { ...process.env, PATH: (process.env.PATH || '') + ':/usr/local/bin' } };
-
-  let cleanTitle = 'audio_track';
-  try {
-    const titleProc = spawn(cmd, titleArgs, spawnOptions);
-    const titleBuffers: Buffer[] = [];
-    const titleErr: Buffer[] = [];
-
-    titleProc.stdout.on('data', (c) => titleBuffers.push(Buffer.from(c)));
-    titleProc.stderr.on('data', (c) => titleErr.push(Buffer.from(c)));
-
-    // Timeout corto para obtener título
-    const titleTimeoutMs = 10_000;
-    let titleTimedOut = false;
-    const tto = setTimeout(() => { titleTimedOut = true; titleProc.kill('SIGKILL'); }, titleTimeoutMs);
-
-    await new Promise<void>((resolve, reject) => {
-      titleProc.on('error', (e) => { clearTimeout(tto); reject(e); });
-      titleProc.on('close', (code) => {
-        clearTimeout(tto);
-        if (titleTimedOut) return reject(new Error('Timeout obteniendo título'));
-        if (titleBuffers.length > 0) return resolve();
-        const stderr = Buffer.concat(titleErr).toString('utf-8').trim();
-        if (code === 0) return resolve(); // a veces no escribe pero exit 0
-        return reject(new Error('No se pudo obtener título: ' + stderr));
-      });
-    });
-
-    const titleOut = Buffer.concat(titleBuffers).toString('utf-8').trim();
-    cleanTitle = sanitizeFilename(titleOut.split('\n')[0] || 'audio_track');
-
-  } catch (err) {
-    console.warn(`[${tempId}] No se pudo obtener título rápido:`, err instanceof Error ? err.message : String(err));
-    // seguimos con default name
+  if (!fs.existsSync(ytPath)) {
+    return NextResponse.json({ error: 'Binario no encontrado' }, { status: 500 });
   }
 
-  const userFilename = `${cleanTitle}.${format === 'mp3' ? 'mp3' : 'mp4'}`;
-  const tempFilePath = path.join(tmpDir, `wavepipe_${tempId}.${format === 'mp3' ? 'mp3' : 'mp4'}`);
+  // 2. Preparar rutas temporales
+  // Usamos un ID aleatorio para que si dos personas bajan a la vez no se mezclen
+  const tempId = Math.random().toString(36).substring(7);
+  const tempDir = os.tmpdir(); 
+  // La plantilla de salida para yt-dlp
+  const tempFilePathTemplate = path.join(tempDir, `wavepipe_${tempId}.%(ext)s`);
+  
+  // Archivo final que esperamos encontrar (mp3 o mp4)
+  const expectedFilePath = path.join(tempDir, `wavepipe_${tempId}.${format === 'mp3' ? 'mp3' : 'mp4'}`);
 
-  // Construir args de descarga
-  const downloadArgsBase = isWindows
-    ? ['--no-warnings','--no-call-home','--output', tempFilePath,'--embed-thumbnail','--add-metadata', url]
-    : ['-m', 'yt_dlp', '--no-warnings','--no-call-home','--output', tempFilePath,'--embed-thumbnail','--add-metadata', url];
+  // 3. Obtener el título (para el nombre del archivo al usuario)
+  let userFilename = `download.${format}`;
+  try {
+    const titleProcess = spawn(ytPath, ['--print', 'title', '--no-warnings', url]);
+    let titleData = '';
+    for await (const chunk of titleProcess.stdout) titleData += chunk.toString();
+    const cleanTitle = titleData.trim().replace(/[^\w\s\-\.]/gi, '') || 'video';
+    userFilename = `${cleanTitle}.${format}`;
+  } catch (e) {
+    console.warn('No se pudo obtener título, usando nombre genérico');
+  }
 
-  const audioArgs = format === 'mp3'
-    ? ['--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0']
-    : ['--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4'];
+  // 4. Argumentos de Calidad (Metadatos y Miniatura)
+  const args = [
+    '--no-warnings',
+    '--no-call-home',
+    '--output', tempFilePathTemplate, // Guardamos en disco temporalmente
+    '--embed-thumbnail',              // <--- CLAVE: Incrustar carátula
+    '--add-metadata',                 // <--- CLAVE: Incrustar Artista/Título
+    url
+  ];
 
-  const finalArgs = isWindows ? [...downloadArgsBase, ...audioArgs] : [...downloadArgsBase, ...audioArgs];
+  if (format === 'mp3') {
+    // Audio: Mejor calidad, convertir a mp3
+    args.push('--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0');
+  } else {
+    // Video: Descargar lo mejor y asegurar contenedor MP4
+    // Esto requiere FFmpeg para mezclar video+audio
+    args.push('--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best');
+    args.push('--merge-output-format', 'mp4');
+  }
 
-  console.log(`[${tempId}] Ejecutando descarga: ${cmd} ${finalArgs.join(' ')}`);
-
-  // Timeout largo para descarga (en ms)
-  const downloadTimeoutMs = 5 * 60 * 1000; // 5 minutos (ajustable)
+  console.log(`[Download] Iniciando proceso para: ${userFilename}`);
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      const proc = spawn(cmd, finalArgs, spawnOptions);
-      const errBufs: Buffer[] = [];
-      let timedOut = false;
-      const dto = setTimeout(() => { timedOut = true; proc.kill('SIGKILL'); }, downloadTimeoutMs);
+    // 5. Ejecutar la descarga (esperamos a que termine de escribir el archivo)
+    await new Promise((resolve, reject) => {
+      const process = spawn(ytPath, args);
+      
+      // Para debuggear si falla
+      process.stderr.on('data', (d) => console.log('YT-DLP Error/Log:', d.toString()));
 
-      proc.stderr.on('data', (d) => {
-        const s = d.toString();
-        errBufs.push(Buffer.from(d));
-        // Logueo controlado para Render
-        if (s.includes('ERROR')) console.error(`[${tempId}] yt-dlp ERROR:`, s);
+      process.on('close', (code) => {
+        if (code === 0) resolve(true);
+        else reject(new Error(`yt-dlp exited with code ${code}`));
       });
-
-      proc.on('error', (e) => { clearTimeout(dto); reject(e); });
-      proc.on('close', (code) => {
-        clearTimeout(dto);
-        if (timedOut) return reject(new Error('Timeout en descarga'));
-        if (code === 0) return resolve();
-        const stderr = Buffer.concat(errBufs).toString('utf-8').trim();
-        return reject(new Error(`yt-dlp salió con código ${code}. stderr: ${stderr}`));
-      });
+      process.on('error', (err) => reject(err));
     });
 
-    // Verificar fichero
-    if (!fs.existsSync(tempFilePath)) throw new Error('Archivo temporal no creado por yt-dlp');
+    // 6. Verificar que el archivo existe
+    if (!fs.existsSync(expectedFilePath)) {
+      throw new Error('El archivo no se generó correctamente. ¿Tienes FFmpeg instalado?');
+    }
 
-    const stats = fs.statSync(tempFilePath);
-    const fileStream = fs.createReadStream(tempFilePath);
+    // 7. Preparar el envío (Stream)
+    const stats = fs.statSync(expectedFilePath);
+    const fileStream = fs.createReadStream(expectedFilePath);
+
+    // Cabeceras correctas
     const headers = new Headers();
-    headers.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(userFilename)}`);
+    headers.set('Content-Disposition', `attachment; filename="${encodeURIComponent(userFilename)}"`);
     headers.set('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'video/mp4');
     headers.set('Content-Length', stats.size.toString());
 
-    // Stream en la respuesta y borrar archivo al terminar
+    // 8. Crear Stream de respuesta y borrar al terminar
     const responseStream = new ReadableStream({
       start(controller) {
         fileStream.on('data', (chunk) => controller.enqueue(chunk));
         fileStream.on('end', () => {
           controller.close();
-          unlinkAsync(tempFilePath).catch(() => {});
+          // IMPORTANTE: Borrar el archivo temporal para no llenar el disco
+          unlinkAsync(expectedFilePath).catch(e => console.error('Error borrando temp:', e));
         });
         fileStream.on('error', (err) => {
           controller.error(err);
-          unlinkAsync(tempFilePath).catch(() => {});
+          unlinkAsync(expectedFilePath).catch(e => console.error('Error borrando temp:', e));
         });
       }
     });
 
     return new NextResponse(responseStream, { headers });
 
-  } catch (err: unknown) {
-    // Intentar borrar archivo si quedó
-    try { if (fs.existsSync(tempFilePath)) await unlinkAsync(tempFilePath); } catch {}
-    const msg = typeof err === 'string' ? err : (err instanceof Error ? err.message : 'Error desconocido');
-    console.error(`[${tempId}] Error descarga:`, msg);
-    return NextResponse.json({ error: 'Fallo en la descarga', details: msg }, { status: 500 });
+  } catch (error: any) {
+    console.error('Error Download:', error);
+    // Intentar limpiar si falló
+    try { if (fs.existsSync(expectedFilePath)) await unlinkAsync(expectedFilePath); } catch {}
+    
+    return NextResponse.json({ error: 'Fallo en la descarga', details: error.message }, { status: 500 });
   }
 }

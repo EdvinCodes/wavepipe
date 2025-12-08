@@ -1,43 +1,35 @@
-# Dockerfile (Debian-slim) para Next.js + yt-dlp
+# 1. Usamos Node 20 sobre Debian Slim (Ligero pero compatible)
 FROM node:20-slim
 
-# Variables de entorno
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV PATH=/usr/local/bin:$PATH
+# 2. Instalamos las herramientas del sistema OBLIGATORIAS
+# - python3: yt-dlp lo necesita para arrancar
+# - ffmpeg: Para unir audio/video y poner carátulas
+# - curl: Para descargar el binario
+RUN apt-get update && \
+    apt-get install -y python3 ffmpeg curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# 3. Preparamos la carpeta de trabajo
 WORKDIR /app
 
-# Actualizar e instalar dependencias del sistema: python3, pip, ffmpeg, utilidades
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-      python3 \
-      python3-pip \
-      ffmpeg \
-      ca-certificates \
-      curl \
-      build-essential \
-  && rm -rf /var/lib/apt/lists/*
+# 4. EL TRUCO: Preparamos la carpeta bin y descargamos yt-dlp
+# Tu código busca en /app/bin/yt-dlp, así que lo ponemos ahí.
+RUN mkdir -p bin
+# Descargamos el binario oficial de Linux
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o bin/yt-dlp
+# Le damos permisos de ejecución
+RUN chmod +x bin/yt-dlp
 
-# Asegurar que /usr/bin/python apunte a python3
-RUN if [ ! -x /usr/bin/python ] && [ -x /usr/bin/python3 ]; then ln -s /usr/bin/python3 /usr/bin/python; fi
-
-# --- CORRECCIÓN AQUÍ ---
-# Añadimos --break-system-packages para saltarnos la restricción de Debian 12
-RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages \
-  && pip3 install --no-cache-dir yt-dlp --break-system-packages
-
-# Copiar package files e instalar dependencias con pnpm
+# 5. Instalamos dependencias de Node.js
 COPY package.json pnpm-lock.yaml* ./
+RUN npm install -g pnpm && pnpm install --frozen-lockfile --prod
 
-RUN npm install -g pnpm \
-  && pnpm install --frozen-lockfile --prod
-
-# Copiar el resto del proyecto
+# 6. Copiamos el resto del código
 COPY . .
 
-# Build
+# 7. Construimos la app Next.js
 RUN pnpm build
 
-# Puerto y comando
+# 8. Arrancamos
 EXPOSE 3000
 CMD ["pnpm", "start"]

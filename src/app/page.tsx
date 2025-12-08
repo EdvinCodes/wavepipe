@@ -12,7 +12,7 @@ import VideoSkeleton from "@/components/VideoSkeleton";
 import HistorySidebar from "@/components/HistorySidebar";
 import { useHistory } from "@/hooks/useHistory";
 
-// --- 1. DEFINICIÓN DE TIPOS (Adiós 'any') ---
+// --- 1. DEFINICIÓN DE TIPOS ACTUALIZADA (Según tu nuevo backend) ---
 
 interface Track {
   id: string;
@@ -20,29 +20,19 @@ interface Track {
   duration: string;
 }
 
-interface VideoData {
-  type: 'video';
+// Unificamos la respuesta porque tu API ahora devuelve un objeto consistente
+interface SearchResult {
   title: string;
   author: string;
   thumbnail: string;
   duration: string;
-}
-
-interface PlaylistData {
-  type: 'playlist';
-  title: string;
-  author: string;
-  thumbnail: string;
+  isPlaylist: boolean; // <--- El cambio clave está aquí
   totalVideos: number;
-  tracks: Track[];
+  tracks?: Track[];    // Solo si es playlist
 }
-
-// Creamos un tipo unión: Puede ser Vídeo, Playlist o Nulo
-type SearchResult = VideoData | PlaylistData | null;
 
 export default function Home() {
-  // --- 2. USAMOS LOS TIPOS EN EL ESTADO ---
-  const [data, setData] = useState<SearchResult>(null);
+  const [data, setData] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentUrl, setCurrentUrl] = useState("");
@@ -62,18 +52,12 @@ export default function Home() {
 
       if (!response.ok) throw new Error(result.error || 'Error al obtener información');
       
-      // TypeScript ahora sabe que 'result' debe encajar en SearchResult
-      setData(result as SearchResult);
+      setData(result); // Guardamos el resultado directo
 
-    } catch (err: unknown) { // --- 3. CORRECCIÓN DEL CATCH ---
-      // Tipamos como 'unknown' y extraemos el mensaje de forma segura
+    } catch (err: unknown) {
       let errorMessage = "Ocurrió un error inesperado";
-      
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      } else if (typeof err === "string") {
-        errorMessage = err;
-      }
+      if (err instanceof Error) errorMessage = err.message;
+      else if (typeof err === "string") errorMessage = err;
 
       console.error(err);
       setError(errorMessage);
@@ -88,20 +72,19 @@ export default function Home() {
 
     setDownloadingFormat(format);
     const toastId = toast.loading(
-      format === "mp3" ? "Extracting Audio..." : "Mixing Video & Audio...", 
-      { description: "Sending request to server. Please wait..." }
+      format === "mp3" ? "Extracting Audio..." : "Getting Video Stream...", 
+      { description: "Starting download process..." }
     );
 
+    // Creamos el enlace invisible para activar la descarga del backend
     const link = document.createElement('a');
     link.href = `/api/download?url=${encodeURIComponent(currentUrl)}&format=${format}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
-    // GUARDAMOS EN HISTORIAL
+    // Guardar en Historial
     if (data) {
-      // TypeScript infiere las propiedades comunes, pero para thumbnail debemos asegurar
-      // Como tanto VideoData como PlaylistData tienen thumbnail y title, esto funciona:
       addToHistory({
         title: data.title,
         thumbnail: data.thumbnail,
@@ -110,14 +93,15 @@ export default function Home() {
       });
     }
 
+    // Feedback visual
     setTimeout(() => {
       setDownloadingFormat(null);
-      toast.success("Request Sent! 🚀", {
+      toast.success("Download Started! 🚀", {
         id: toastId,
-        description: "Server is processing. Your file will appear shortly.",
-        duration: 5000
+        description: "Your browser should start the download shortly.",
+        duration: 4000
       });
-    }, 3000); 
+    }, 2000); 
   };
 
   return (
@@ -182,8 +166,10 @@ export default function Home() {
               </motion.div>
             )}
 
-            {/* Renderizado Condicional Seguro gracias a los Tipos */}
-            {!loading && !error && data?.type === "video" && (
+            {/* --- RENDERIZADO CONDICIONAL ACTUALIZADO --- */}
+            
+            {/* Si NO es playlist y tenemos datos -> VideoCard */}
+            {!loading && !error && data && !data.isPlaylist && (
               <VideoCard 
                 key="video-card"
                 thumbnail={data.thumbnail}
@@ -195,14 +181,15 @@ export default function Home() {
               />
             )}
 
-            {!loading && !error && data?.type === "playlist" && (
+            {/* Si SÍ es playlist y tenemos datos -> PlaylistCard */}
+            {!loading && !error && data && data.isPlaylist && (
               <PlaylistCard 
                 key="playlist-card"
                 title={data.title}
                 author={data.author}
                 thumbnail={data.thumbnail}
                 totalVideos={data.totalVideos}
-                tracks={data.tracks}
+                tracks={data.tracks || []} // Aseguramos array aunque venga undefined
                 onAddToHistory={addToHistory}
               />
             )}
