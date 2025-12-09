@@ -52,3 +52,6 @@ yt-dlp.exe
 
 # OS specific
 Thumbs.db
+
+# Cookies file
+cookies.txt
