@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { promisify } from "util";
+import { progressMap } from "@/lib/progressStore";
 
 const unlinkAsync = promisify(fs.unlink);
 
@@ -13,6 +14,24 @@ export async function GET(request: NextRequest) {
   const quality = request.nextUrl.searchParams.get("quality") || "720";
   const start = request.nextUrl.searchParams.get("start");
   const end = request.nextUrl.searchParams.get("end");
+  const progressId = request.nextUrl.searchParams.get("progressId");
+
+  // Función para extraer el porcentaje de la consola de yt-dlp
+  const reportProgress = (chunk: Buffer | string) => {
+    if (!progressId) return;
+    const text = chunk.toString();
+
+    // Nueva RegEx más agresiva: busca cualquier número (con decimales) seguido de %
+    const match = text.match(/([\d\.]+)%/);
+
+    if (match && match[1]) {
+      const value = match[1];
+      // Evitamos actualizar si es el mismo valor para no saturar el mapa
+      if (progressMap.get(progressId) !== `${value}%`) {
+        progressMap.set(progressId, `${value}%`);
+      }
+    }
+  };
 
   if (!url)
     return NextResponse.json({ error: "URL requerida" }, { status: 400 });
@@ -115,10 +134,16 @@ export async function GET(request: NextRequest) {
       await new Promise((resolve, reject) => {
         let errorLog = "";
         const process = spawn(ytPath, args);
+
+        // --- NUEVO: Capturamos el progreso ---
+        process.stdout.on("data", reportProgress);
         process.stderr.on("data", (chunk) => {
+          reportProgress(chunk); // A veces yt-dlp manda el progreso por stderr
           errorLog += chunk.toString();
         });
+
         process.on("close", (code) => {
+          if (progressId) progressMap.set(progressId, "DONE"); // Avisamos que terminó
           if (code === 0) resolve(true);
           else reject(new Error(`yt-dlp código ${code}. Detalle: ${errorLog}`));
         });
@@ -214,8 +239,14 @@ export async function GET(request: NextRequest) {
 
       const responseStream = new ReadableStream({
         start(controller) {
-          ytProcess.stdout.on("data", (chunk) => controller.enqueue(chunk));
-          ytProcess.stdout.on("end", () => controller.close());
+          ytProcess.stdout.on("data", (chunk) => {
+            reportProgress(chunk); // <--- NUEVO: Reportamos progreso al vuelo
+            controller.enqueue(chunk);
+          });
+          ytProcess.stdout.on("end", () => {
+            if (progressId) progressMap.set(progressId, "DONE");
+            controller.close();
+          });
           ytProcess.on("error", (err) => controller.error(err));
         },
         cancel() {

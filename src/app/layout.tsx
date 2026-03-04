@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "sonner"; // <--- IMPORTAR AQUÍ
+import { Toaster } from "sonner";
 
 const inter = Inter({ subsets: ["latin"] });
+
+const BASE_URL =
+  process.env.NEXT_PUBLIC_BASE_URL || "https://wavepipe.onrender.com";
 
 export const viewport: Viewport = {
   themeColor: "#0a0a0f",
@@ -33,13 +36,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://wavepipe.onrender.com",
+    url: BASE_URL,
     title: "WavePipe | Ultimate YouTube Downloader",
     description: "The cleanest downloader on the web. No ads, just waves.",
     siteName: "WavePipe",
+    // FIX: /preview.png sí existe en /public, og-image.jpg no existía
     images: [
       {
-        url: "/og-image.jpg", // Tendrás que crear una imagen 'og-image.jpg' y ponerla en 'public'
+        url: "/preview.png",
         width: 1200,
         height: 630,
         alt: "WavePipe Preview",
@@ -50,11 +54,12 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "WavePipe",
     description: "Download YouTube content without the hassle.",
-    creator: "@edvincodes", // Tu usuario si tienes
+    creator: "@edvincodes",
   },
+  // FIX: favicon.ico sí existe, icon.png no existía
   icons: {
-    icon: "/icon.png",
-    apple: "/icon.png",
+    icon: "/favicon.ico",
+    apple: "/favicon.ico",
   },
   manifest: "/manifest.json",
 };
@@ -79,7 +84,6 @@ export default function RootLayout({
           <div className="absolute bottom-[-20%] right-[-10%] h-[500px] w-[500px] rounded-full bg-blue-600/20 blur-[120px]" />
         </div>
 
-        {/* --- AÑADIR ESTO AL FINAL: El contenedor de notificaciones --- */}
         <Toaster
           theme="dark"
           position="bottom-center"

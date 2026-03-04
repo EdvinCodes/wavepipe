@@ -34,14 +34,29 @@ const formatDuration = (seconds: number): string => {
   const mm = Math.floor((seconds % 3600) / 60);
   const ss = seconds % 60;
   return hh
-    ? `${hh}:${mm.toString().padStart(2, "0")}:${ss
-        .toString()
-        .padStart(2, "0")}`
+    ? `${hh}:${mm.toString().padStart(2, "0")}:${ss.toString().padStart(2, "0")}`
     : `${mm}:${ss.toString().padStart(2, "0")}`;
 };
 
-const isValidUrl = (url: string) => {
-  return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(url);
+// FIX: Validación robusta con new URL() — cubre Shorts, Music, mobile y youtu.be
+const VALID_YT_HOSTS = new Set([
+  "youtube.com",
+  "www.youtube.com",
+  "music.youtube.com",
+  "m.youtube.com",
+  "youtu.be",
+]);
+
+const isValidUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      VALID_YT_HOSTS.has(parsed.hostname)
+    );
+  } catch {
+    return false;
+  }
 };
 
 export async function GET(request: NextRequest) {
@@ -62,24 +77,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // --- CONFIGURACIÓN DE COOKIES ---
   const cookiesPath = path.join(process.cwd(), "cookies.txt");
   const hasCookies = fs.existsSync(cookiesPath);
 
-  // --- ARGUMENTOS ---
   const args = ["--dump-single-json", "--flat-playlist", "--no-warnings"];
-
-  // TRUCO 2: Cookies (Si existen)
-  if (hasCookies) {
-    args.push("--cookies", cookiesPath);
-  }
-
+  if (hasCookies) args.push("--cookies", cookiesPath);
   args.push(url);
-
   if (url.includes("list=")) args.push("--yes-playlist");
 
   try {
-    // Aumentamos el buffer por si la respuesta JSON es gigante
     const { stdout } = await execFileAsync(ytPath, args, {
       maxBuffer: 1024 * 1024 * 50,
     });
@@ -87,10 +93,8 @@ export async function GET(request: NextRequest) {
     if (!stdout) throw new Error("Salida vacía de yt-dlp");
 
     const data = JSON.parse(stdout);
-
     const isPlaylist = data._type === "playlist" || !!data.entries;
 
-    // Buscamos la mejor miniatura de forma segura
     const thumbnail =
       data.thumbnails?.at(-1)?.url ??
       data.entries?.[0]?.thumbnails?.[0]?.url ??
@@ -104,10 +108,9 @@ export async function GET(request: NextRequest) {
       duration: isPlaylist
         ? formatDuration(
             data.entries?.reduce(
-              // Aseguramos que si t.duration no existe o es NaN, sume 0
               (sum: number, t: YtDlpEntry) => sum + (Number(t.duration) || 0),
               0,
-            ) || 0, // Y por si entries está vacío
+            ) || 0,
           )
         : formatDuration(Number(data.duration) || 0),
       isPlaylist,
@@ -123,18 +126,14 @@ export async function GET(request: NextRequest) {
           title: t.title,
           duration: formatDuration(t.duration || 0),
         })) || [];
-
       return NextResponse.json({ ...info, tracks });
     }
 
     return NextResponse.json(info);
   } catch (err: unknown) {
-    // Le decimos a TS qué forma esperamos que tenga el error de execFile
     const execErr = err as { stderr?: string; message?: string };
     const errorMsg = execErr.stderr || execErr.message || "Error desconocido";
-
     console.error("API Info Error:", errorMsg);
-
     return NextResponse.json(
       { error: "Falló al obtener info", details: errorMsg },
       { status: 500 },

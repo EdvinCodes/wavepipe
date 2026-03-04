@@ -13,11 +13,12 @@ import {
 import Image from "next/image";
 import { toast } from "sonner";
 
-// Interfaz para definir qué datos enviamos al historial (Adiós 'any')
+// FIX: Añadido campo quality para que coincida con HistoryItem completo
 interface HistoryPayload {
   title: string;
   thumbnail: string;
   format: "mp3" | "mp4";
+  quality: string;
   url: string;
 }
 
@@ -33,7 +34,7 @@ interface PlaylistCardProps {
   thumbnail: string;
   totalVideos: number;
   tracks: Track[];
-  onAddToHistory: (item: HistoryPayload) => void; // <--- Tipado estricto
+  onAddToHistory: (item: HistoryPayload) => void;
 }
 
 export default function PlaylistCard({
@@ -66,19 +67,14 @@ export default function PlaylistCard({
     else setSelectedIds(tracks.map((t) => t.id));
   };
 
-  const triggerIsolatedDownload = (url: string) => {
-    const iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    iframe.src = url;
-    document.body.appendChild(iframe);
-
-    // Aumentamos el timeout a 5 minutos (300000ms) para vídeos largos o 4K
-    // Esto evita que la descarga se corte silenciosamente
-    setTimeout(() => {
-      if (document.body.contains(iframe)) {
-        document.body.removeChild(iframe);
-      }
-    }, 300000);
+  // FIX: Reemplazado el hack de iframe por anchor click — más fiable y sin
+  // elementos DOM huérfanos. Los navegadores modernos manejan esto igual de bien.
+  const triggerAnchorDownload = (url: string) => {
+    const link = document.createElement("a");
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleBatchDownload = async () => {
@@ -91,6 +87,8 @@ export default function PlaylistCard({
       duration: 5000,
     });
 
+    let errorCount = 0;
+
     for (let i = 0; i < selectedIds.length; i++) {
       const id = selectedIds[i];
       const currentNumber = i + 1;
@@ -100,34 +98,51 @@ export default function PlaylistCard({
       setProgressText(`Requesting ${currentNumber}/${total}...`);
 
       const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-      const downloadUrl = `/api/download?url=${encodeURIComponent(videoUrl)}&format=${format}`;
+      const downloadUrl = `/api/download?url=${encodeURIComponent(videoUrl)}&format=${format}&quality=720`;
 
-      triggerIsolatedDownload(downloadUrl);
+      // FIX: Try-catch por ítem para detectar y reportar fallos individuales
+      try {
+        triggerAnchorDownload(downloadUrl);
 
-      // GUARDAR EN HISTORIAL (Ahora con tipos correctos)
-      if (track) {
-        onAddToHistory({
-          title: track.title,
-          thumbnail: thumbnail,
-          format: format,
-          url: videoUrl,
+        if (track) {
+          onAddToHistory({
+            title: track.title,
+            thumbnail: thumbnail,
+            format: format,
+            quality: "720",
+            url: videoUrl,
+          });
+        }
+
+        toast.success(`Processing "${track?.title.substring(0, 25)}..."`, {
+          description: "Download will start automatically in a moment.",
+          duration: 2000,
+        });
+      } catch (err) {
+        errorCount++;
+        console.error(`Error al iniciar descarga de ${track?.title}:`, err);
+        toast.error(`Error: "${track?.title?.substring(0, 25)}..."`, {
+          description: "No se pudo iniciar esta descarga.",
+          duration: 3000,
         });
       }
 
-      toast.success(`Processing "${track?.title.substring(0, 20)}..."`, {
-        description: "Download will start automatically in a moment.",
-        duration: 2000,
-      });
-
       if (i < total - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 2500));
       }
     }
 
-    setProgressText("All requests sent!");
-    toast.success("All requests sent!", {
+    const msg =
+      errorCount === 0
+        ? "All requests sent!"
+        : `Done with ${errorCount} error(s)`;
+
+    setProgressText(msg);
+    toast.success(msg, {
       description:
-        "Your browser will handle the rest. Check your downloads folder shortly.",
+        errorCount === 0
+          ? "Your browser will handle the rest. Check your downloads folder."
+          : `${selectedIds.length - errorCount} downloads started, ${errorCount} failed.`,
     });
 
     setTimeout(() => {
@@ -169,6 +184,7 @@ export default function PlaylistCard({
         </p>
 
         <div className="w-full space-y-4 mt-auto">
+          {/* Selector MP3 / MP4 */}
           <div className="bg-black/40 p-1 rounded-xl flex relative">
             <motion.div
               className="absolute top-1 bottom-1 bg-white/10 rounded-lg shadow-sm"
@@ -196,7 +212,7 @@ export default function PlaylistCard({
           <button
             onClick={handleBatchDownload}
             disabled={selectedIds.length === 0 || isDownloading}
-            className={`w-full py-4 px-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 relative overflow-hidden
+            className={`w-full py-4 px-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2
               ${
                 isDownloading
                   ? "bg-gray-800 text-gray-300 cursor-wait"

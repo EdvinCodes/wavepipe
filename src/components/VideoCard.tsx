@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Music, Video, Clock, Loader2, ChevronDown } from "lucide-react";
+import {
+  Music,
+  Video,
+  Clock,
+  Loader2,
+  ChevronDown,
+  AlertTriangle,
+} from "lucide-react";
 import Image from "next/image";
 
 interface VideoCardProps {
@@ -17,7 +24,18 @@ interface VideoCardProps {
     end?: string,
   ) => void;
   downloadingFormat: "mp3" | "mp4" | null;
+  progress?: string | null;
 }
+
+// FIX: Helpers para validar formato de tiempo y comparar duraciones
+const isValidTime = (t: string) =>
+  !t || /^\d{1,2}:\d{2}(:\d{2})?$/.test(t.trim());
+
+const toSeconds = (t: string): number => {
+  const parts = t.trim().split(":").map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return parts[0] * 60 + (parts[1] || 0);
+};
 
 export default function VideoCard({
   thumbnail,
@@ -26,10 +44,26 @@ export default function VideoCard({
   duration,
   onDownload,
   downloadingFormat,
+  progress,
 }: VideoCardProps) {
   const [quality, setQuality] = useState("720");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+
+  // FIX: Validación reactiva de los inputs de recorte
+  const trimError = useMemo(() => {
+    if (start && !isValidTime(start))
+      return "Formato inválido — usa MM:SS o HH:MM:SS";
+    if (end && !isValidTime(end))
+      return "Formato inválido — usa MM:SS o HH:MM:SS";
+    if (start && end && isValidTime(start) && isValidTime(end)) {
+      if (toSeconds(start) >= toSeconds(end))
+        return "El inicio debe ser menor que el fin";
+    }
+    return null;
+  }, [start, end]);
+
+  const isDisabled = downloadingFormat !== null || !!trimError;
 
   return (
     <motion.div
@@ -66,24 +100,26 @@ export default function VideoCard({
           </div>
 
           <div className="grid grid-cols-2 gap-3 mt-2">
-            {/* --- BOTÓN MP3 --- */}
+            {/* Botón MP3 */}
             <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onDownload("mp3", "720", start, end)} // <--- Pasamos start y end
-              disabled={downloadingFormat !== null}
+              whileHover={{ scale: isDisabled ? 1 : 1.05 }}
+              whileTap={{ scale: isDisabled ? 1 : 0.95 }}
+              onClick={() =>
+                onDownload("mp3", "720", start || undefined, end || undefined)
+              }
+              disabled={isDisabled}
               className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden h-24
                 ${
                   downloadingFormat === "mp3"
                     ? "bg-purple-500/40 border-purple-500"
                     : "bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20"
-                }`}
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               {downloadingFormat === "mp3" ? (
                 <>
                   <Loader2 className="w-5 h-5 text-white animate-spin" />
                   <span className="text-xs font-bold text-white">
-                    Cooking...
+                    {progress ?? "Cooking..."}
                   </span>
                 </>
               ) : (
@@ -96,25 +132,32 @@ export default function VideoCard({
               )}
             </motion.button>
 
-            {/* --- BOTÓN MP4 + SELECTORES --- */}
+            {/* Botón MP4 + Selectores */}
             <div className="flex flex-col gap-2">
               <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => onDownload("mp4", quality, start, end)} // <--- Pasamos start y end
-                disabled={downloadingFormat !== null}
+                whileHover={{ scale: isDisabled ? 1 : 1.05 }}
+                whileTap={{ scale: isDisabled ? 1 : 0.95 }}
+                onClick={() =>
+                  onDownload(
+                    "mp4",
+                    quality,
+                    start || undefined,
+                    end || undefined,
+                  )
+                }
+                disabled={isDisabled}
                 className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden h-24
                   ${
                     downloadingFormat === "mp4"
                       ? "bg-blue-500/40 border-blue-500"
                       : "bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20"
-                  }`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {downloadingFormat === "mp4" ? (
                   <>
                     <Loader2 className="w-5 h-5 text-white animate-spin" />
                     <span className="text-xs font-bold text-white">
-                      Streaming...
+                      {progress ?? "Streaming..."}
                     </span>
                   </>
                 ) : (
@@ -127,7 +170,7 @@ export default function VideoCard({
                 )}
               </motion.button>
 
-              {/* Selector de Calidad (se queda igual) */}
+              {/* Selector de Calidad */}
               <div className="relative">
                 <select
                   value={quality}
@@ -136,16 +179,16 @@ export default function VideoCard({
                   className="w-full appearance-none bg-white/5 border border-white/10 rounded-lg text-xs text-gray-300 py-1.5 pl-3 pr-8 outline-none hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <option value="2160" className="bg-gray-900">
-                    4K (Ultra HD) - Lento
+                    4K (Ultra HD) — Lento
                   </option>
                   <option value="1080" className="bg-gray-900">
-                    1080p (FHD) - Lento
+                    1080p (FHD) — Lento
                   </option>
                   <option value="720" className="bg-gray-900">
-                    720p (HD) - Rápido
+                    720p (HD) — Rápido
                   </option>
                   <option value="480" className="bg-gray-900">
-                    480p (SD) - Rápido
+                    480p (SD) — Rápido
                   </option>
                   <option value="360" className="bg-gray-900">
                     360p (Data Saver)
@@ -154,25 +197,35 @@ export default function VideoCard({
                 <ChevronDown className="absolute right-2 top-1.5 w-3 h-3 text-gray-400 pointer-events-none" />
               </div>
 
-              {/* NUEVO: Inputs de Corte (Trimming) */}
+              {/* Inputs de Recorte */}
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Inicio (ej: 0:15)"
+                  placeholder="Inicio (0:15)"
                   value={start}
                   onChange={(e) => setStart(e.target.value)}
                   disabled={downloadingFormat !== null}
-                  className="w-1/2 bg-white/5 border border-white/10 rounded-lg text-xs text-center text-gray-300 py-1.5 outline-none hover:bg-white/10 transition-colors focus:border-blue-500/50 placeholder-gray-600"
+                  className={`w-1/2 bg-white/5 border rounded-lg text-xs text-center text-gray-300 py-1.5 outline-none hover:bg-white/10 transition-colors focus:border-blue-500/50 placeholder-gray-600
+                    ${trimError && start ? "border-red-500/60" : "border-white/10"}`}
                 />
                 <input
                   type="text"
-                  placeholder="Fin (ej: 2:30)"
+                  placeholder="Fin (2:30)"
                   value={end}
                   onChange={(e) => setEnd(e.target.value)}
                   disabled={downloadingFormat !== null}
-                  className="w-1/2 bg-white/5 border border-white/10 rounded-lg text-xs text-center text-gray-300 py-1.5 outline-none hover:bg-white/10 transition-colors focus:border-blue-500/50 placeholder-gray-600"
+                  className={`w-1/2 bg-white/5 border rounded-lg text-xs text-center text-gray-300 py-1.5 outline-none hover:bg-white/10 transition-colors focus:border-blue-500/50 placeholder-gray-600
+                    ${trimError && end ? "border-red-500/60" : "border-white/10"}`}
                 />
               </div>
+
+              {/* FIX: Mensaje de error de validación visible */}
+              {trimError && (
+                <div className="flex items-center gap-1 text-red-400 text-[10px]">
+                  <AlertTriangle size={10} />
+                  <span>{trimError}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

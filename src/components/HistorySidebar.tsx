@@ -18,10 +18,11 @@ export default function HistorySidebar({
   history,
   onClear,
 }: HistorySidebarProps) {
-  // Función para re-descargar desde el historial
+  // FIX: Incluye quality en la URL de re-descarga (antes siempre era 720p)
   const handleRedownload = (item: HistoryItem) => {
+    const quality = item.quality || "720";
     const link = document.createElement("a");
-    link.href = `/api/download?url=${encodeURIComponent(item.url)}&format=${item.format}`;
+    link.href = `/api/download?url=${encodeURIComponent(item.url)}&format=${item.format}&quality=${quality}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -31,7 +32,6 @@ export default function HistorySidebar({
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Fondo oscuro (Backdrop) */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -40,7 +40,6 @@ export default function HistorySidebar({
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
           />
 
-          {/* El Panel Lateral */}
           <motion.div
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
@@ -102,17 +101,27 @@ export default function HistorySidebar({
                       </h3>
                       <div className="flex items-center gap-2 mt-1">
                         <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${item.format === "mp3" ? "bg-purple-500/20 text-purple-300" : "bg-blue-500/20 text-blue-300"}`}
+                          className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${
+                            item.format === "mp3"
+                              ? "bg-purple-500/20 text-purple-300"
+                              : "bg-blue-500/20 text-blue-300"
+                          }`}
                         >
                           {item.format}
                         </span>
+                        {/* FIX: Mostramos la calidad guardada */}
+                        {item.format === "mp4" && item.quality && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-mono">
+                            {item.quality}p
+                          </span>
+                        )}
                         <span className="text-xs text-gray-500">
                           {item.date}
                         </span>
                       </div>
                     </div>
 
-                    {/* Botón Redownload */}
+                    {/* Botón Re-descarga */}
                     <button
                       onClick={() => handleRedownload(item)}
                       className="p-2 self-center rounded-full hover:bg-white/10 text-gray-400 hover:text-blue-400 transition-colors"

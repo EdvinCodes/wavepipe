@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import { Github, Heart, History, AlertCircle } from "lucide-react";
@@ -12,23 +12,20 @@ import VideoSkeleton from "@/components/VideoSkeleton";
 import HistorySidebar from "@/components/HistorySidebar";
 import { useHistory } from "@/hooks/useHistory";
 
-// --- 1. DEFINICIÓN DE TIPOS ACTUALIZADA (Según tu nuevo backend) ---
-
 interface Track {
   id: string;
   title: string;
   duration: string;
 }
 
-// Unificamos la respuesta porque tu API ahora devuelve un objeto consistente
 interface SearchResult {
   title: string;
   author: string;
   thumbnail: string;
   duration: string;
-  isPlaylist: boolean; // <--- El cambio clave está aquí
+  isPlaylist: boolean;
   totalVideos: number;
-  tracks?: Track[]; // Solo si es playlist
+  tracks?: Track[];
 }
 
 export default function Home() {
@@ -39,9 +36,20 @@ export default function Home() {
   const [downloadingFormat, setDownloadingFormat] = useState<
     "mp3" | "mp4" | null
   >(null);
+  const [progress, setProgress] = useState<string | null>(null);
+
+  // FIX: Ref para rastrear el EventSource activo y poder cerrarlo
+  const evtSourceRef = useRef<EventSource | null>(null);
 
   const { history, addToHistory, clearHistory, isOpen, setIsOpen } =
     useHistory();
+
+  // FIX: Cerrar el EventSource si el componente se desmonta (evita memory leak)
+  useEffect(() => {
+    return () => {
+      evtSourceRef.current?.close();
+    };
+  }, []);
 
   const handleSearch = async (url: string) => {
     setLoading(true);
@@ -52,16 +60,13 @@ export default function Home() {
     try {
       const response = await fetch(`/api/info?url=${encodeURIComponent(url)}`);
       const result = await response.json();
-
       if (!response.ok)
         throw new Error(result.error || "Error al obtener información");
-
-      setData(result); // Guardamos el resultado directo
+      setData(result);
     } catch (err: unknown) {
       let errorMessage = "Ocurrió un error inesperado";
       if (err instanceof Error) errorMessage = err.message;
       else if (typeof err === "string") errorMessage = err;
-
       console.error(err);
       setError(errorMessage);
       toast.error("Error finding video", { description: errorMessage });
@@ -78,7 +83,42 @@ export default function Home() {
   ) => {
     if (!currentUrl) return;
 
+    // FIX: Cerrar cualquier EventSource previo antes de crear uno nuevo
+    evtSourceRef.current?.close();
+    evtSourceRef.current = null;
+
     setDownloadingFormat(format);
+    setProgress("0%");
+
+    const progressId = Math.random().toString(36).substring(7);
+
+    const evtSource = new EventSource(`/api/progress?id=${progressId}`);
+    evtSourceRef.current = evtSource; // FIX: Guardar referencia para cleanup
+
+    evtSource.onmessage = (event) => {
+      // FIX: Renombrado a eventData para no colisionar con el estado 'data'
+      const eventData = event.data;
+      if (
+        eventData === "DONE" ||
+        eventData === "ERROR" ||
+        eventData === "100%"
+      ) {
+        evtSource.close();
+        evtSourceRef.current = null;
+        if (eventData === "DONE" || eventData === "100%") {
+          setProgress("Completado ✓");
+        }
+      } else {
+        setProgress(eventData);
+      }
+    };
+
+    // FIX: Manejar errores de conexión SSE
+    evtSource.onerror = () => {
+      evtSource.close();
+      evtSourceRef.current = null;
+    };
+
     const toastId = toast.loading(
       format === "mp3" ? "Extracting Audio..." : "Getting Video Stream...",
       {
@@ -89,8 +129,7 @@ export default function Home() {
       },
     );
 
-    // Construimos la URL inyectando los parámetros de tiempo si existen
-    let downloadUrl = `/api/download?url=${encodeURIComponent(currentUrl)}&format=${format}&quality=${quality}`;
+    let downloadUrl = `/api/download?url=${encodeURIComponent(currentUrl)}&format=${format}&quality=${quality}&progressId=${progressId}`;
     if (start) downloadUrl += `&start=${encodeURIComponent(start)}`;
     if (end) downloadUrl += `&end=${encodeURIComponent(end)}`;
 
@@ -100,17 +139,20 @@ export default function Home() {
     link.click();
     document.body.removeChild(link);
 
+    // FIX: Guardar calidad en el historial
     if (data) {
       addToHistory({
         title: data.title,
         thumbnail: data.thumbnail,
-        format: format,
+        format,
+        quality,
         url: currentUrl,
       });
     }
 
     setTimeout(() => {
       setDownloadingFormat(null);
+      setTimeout(() => setProgress(null), 2000);
       toast.success("Download Started! 🚀", {
         id: toastId,
         description: "Your browser should start the download shortly.",
@@ -121,7 +163,7 @@ export default function Home() {
 
   return (
     <main className="flex flex-col items-center min-h-screen w-full max-w-4xl px-4 mx-auto text-center pt-20 relative">
-      {/* BOTÓN DE HISTORIAL */}
+      {/* Botón de historial */}
       <div className="absolute top-6 right-6 z-20">
         <button
           onClick={() => setIsOpen(true)}
@@ -146,7 +188,6 @@ export default function Home() {
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 pb-2">
             WavePipe
           </h1>
-
           <AnimatePresence>
             {!data && !loading && !error && (
               <motion.p
@@ -190,9 +231,6 @@ export default function Home() {
               </motion.div>
             )}
 
-            {/* --- RENDERIZADO CONDICIONAL ACTUALIZADO --- */}
-
-            {/* Si NO es playlist y tenemos datos -> VideoCard */}
             {!loading && !error && data && !data.isPlaylist && (
               <VideoCard
                 key="video-card"
@@ -202,10 +240,10 @@ export default function Home() {
                 duration={data.duration}
                 onDownload={handleDownload}
                 downloadingFormat={downloadingFormat}
+                progress={progress}
               />
             )}
 
-            {/* Si SÍ es playlist y tenemos datos -> PlaylistCard */}
             {!loading && !error && data && data.isPlaylist && (
               <PlaylistCard
                 key="playlist-card"
@@ -213,7 +251,7 @@ export default function Home() {
                 author={data.author}
                 thumbnail={data.thumbnail}
                 totalVideos={data.totalVideos}
-                tracks={data.tracks || []} // Aseguramos array aunque venga undefined
+                tracks={data.tracks || []}
                 onAddToHistory={addToHistory}
               />
             )}
