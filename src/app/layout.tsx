@@ -16,6 +16,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL(BASE_URL),
   title: {
     default: "WavePipe | Ultimate YouTube Downloader",
     template: "%s | WavePipe",
