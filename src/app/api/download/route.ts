@@ -2,11 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
-import os from "os";
-import { promisify } from "util";
-
-// Promisify para poder usar await con unlink (borrar)
-const unlinkAsync = promisify(fs.unlink);
 
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get("url");
@@ -15,7 +10,6 @@ export async function GET(request: NextRequest) {
   if (!url)
     return NextResponse.json({ error: "URL requerida" }, { status: 400 });
 
-  // 1. Detectar binario
   const isWindows = process.platform === "win32";
   const binName = isWindows ? "yt-dlp.exe" : "yt-dlp";
   const ytPath = path.join(process.cwd(), "bin", binName);
@@ -27,27 +21,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // --- CONFIGURACIÓN DE COOKIES ---
   const cookiesPath = path.join(process.cwd(), "cookies.txt");
   const hasCookies = fs.existsSync(cookiesPath);
 
-  // 2. Preparar rutas temporales
-  // Usamos un ID aleatorio para que si dos personas bajan a la vez no se mezclen
-  const tempId = Math.random().toString(36).substring(7);
-  const tempDir = os.tmpdir();
-  // La plantilla de salida para yt-dlp
-  const tempFilePathTemplate = path.join(tempDir, `wavepipe_${tempId}.%(ext)s`);
-
-  // Archivo final que esperamos encontrar (mp3 o mp4)
-  const expectedFilePath = path.join(
-    tempDir,
-    `wavepipe_${tempId}.${format === "mp3" ? "mp3" : "mp4"}`,
-  );
-
-  // 3. Obtener el título (para el nombre del archivo al usuario)
+  // 1. Obtener el título rápidamente
   let userFilename = `download.${format}`;
   try {
-    // Preparamos args para obtener título, INCLUYENDO COOKIES si existen
     const titleArgs = [
       "--print",
       "title",
@@ -68,28 +47,19 @@ export async function GET(request: NextRequest) {
     console.warn("No se pudo obtener título, usando nombre genérico");
   }
 
-  // 4. Argumentos de Calidad (Metadatos y Miniatura)
+  // 2. Configurar la "Tubería" (Streaming a stdout)
   const args = [
     "--no-warnings",
     "--output",
-    tempFilePathTemplate, // Guardamos en disco temporalmente
-    "--embed-thumbnail", // <--- CLAVE: Incrustar carátula
-    "--add-metadata", // <--- CLAVE: Incrustar Artista/Título
-
-    // --- NUEVO: DISFRAZ ANTI-BOT ---
+    "-", // <--- MAGIA: Escupir datos directamente por consola, no crear archivos
     "--user-agent",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   ];
 
-  if (hasCookies) {
-    console.log("[Download] Usando cookies autenticadas");
-    args.push("--cookies", cookiesPath);
-  }
-
-  args.push(url);
+  if (hasCookies) args.push("--cookies", cookiesPath);
 
   if (format === "mp3") {
-    // Audio: Mejor calidad, convertir a mp3
+    // Audio: Extraemos audio al vuelo
     args.push(
       "--extract-audio",
       "--audio-format",
@@ -98,111 +68,63 @@ export async function GET(request: NextRequest) {
       "0",
     );
   } else {
-    // Video: Descargar lo mejor y asegurar contenedor MP4
-    // Esto requiere FFmpeg para mezclar video+audio
-    args.push(
-      "--format",
-      "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-    );
-    args.push("--merge-output-format", "mp4");
+    // Video: Para streaming en MP4 sin fallos de FFmpeg, pedimos el mejor archivo ya pre-mezclado por Youtube (suele ser 720p)
+    args.push("--format", "best[ext=mp4]/best");
   }
 
-  console.log(`[Download] Iniciando proceso para: ${userFilename}`);
+  args.push(url);
+
+  console.log(`[Piping] Iniciando streaming directo para: ${userFilename}`);
 
   try {
-    // 5. Ejecutar la descarga (esperamos a que termine de escribir el archivo)
-    await new Promise((resolve, reject) => {
-      const process = spawn(ytPath, args);
+    // 3. Arrancamos el proceso
+    const ytProcess = spawn(ytPath, args);
 
-      // Para debuggear si falla
-      process.stderr.on("data", (d) =>
-        console.log("YT-DLP Error/Log:", d.toString()),
-      );
-
-      process.on("close", (code) => {
-        if (code === 0) resolve(true);
-        else reject(new Error(`yt-dlp exited with code ${code}`));
-      });
-      process.on("error", (err) => reject(err));
+    ytProcess.stderr.on("data", (data) => {
+      // Ignoramos los logs de descarga normal para no saturar la consola
+      const msg = data.toString();
+      if (!msg.includes("[download]")) {
+        console.log("YT-DLP Log:", msg);
+      }
     });
 
-    // 6. Verificar que el archivo existe
-    if (!fs.existsSync(expectedFilePath)) {
-      throw new Error(
-        "El archivo no se generó correctamente. ¿Tienes FFmpeg instalado?",
-      );
-    }
+    // 4. Creamos el stream que enviará los datos a medida que yt-dlp los escupe
+    const responseStream = new ReadableStream({
+      start(controller) {
+        // Cada vez que yt-dlp descarga un trozo, se lo mandamos al usuario
+        ytProcess.stdout.on("data", (chunk) => controller.enqueue(chunk));
 
-    // 7. Preparar el envío (Stream)
-    const stats = fs.statSync(expectedFilePath);
-    const fileStream = fs.createReadStream(expectedFilePath);
+        // Cuando termine, cerramos el grifo
+        ytProcess.stdout.on("end", () => controller.close());
 
-    // Cabeceras correctas
+        ytProcess.on("error", (err) => controller.error(err));
+      },
+      cancel() {
+        // Si el usuario cancela la descarga en el navegador, MATAMOS el proceso
+        console.log(
+          `[Piping] Descarga cancelada por el usuario. Matando proceso...`,
+        );
+        ytProcess.kill("SIGKILL");
+      },
+    });
+
+    // 5. Devolvemos la respuesta
     const headers = new Headers();
     headers.set(
       "Content-Disposition",
       `attachment; filename="${encodeURIComponent(userFilename)}"`,
     );
     headers.set("Content-Type", format === "mp3" ? "audio/mpeg" : "video/mp4");
-    headers.set("Content-Length", stats.size.toString());
-
-    // 8. Crear Stream de respuesta y borrar al terminar o cancelar
-    const responseStream = new ReadableStream({
-      start(controller) {
-        fileStream.on("data", (chunk) => controller.enqueue(chunk));
-
-        fileStream.on("end", async () => {
-          controller.close();
-          // IMPORTANTE: Borrar al terminar el stream
-          try {
-            if (fs.existsSync(expectedFilePath))
-              await unlinkAsync(expectedFilePath);
-          } catch (e) {
-            console.error("Error borrando temp (end):", e);
-          }
-        });
-
-        fileStream.on("error", async (err) => {
-          controller.error(err);
-          // IMPORTANTE: Borrar si hay error de lectura
-          try {
-            if (fs.existsSync(expectedFilePath))
-              await unlinkAsync(expectedFilePath);
-          } catch (e) {
-            console.error("Error borrando temp (error):", e);
-          }
-        });
-      },
-      cancel: async () => {
-        // IMPORTANTE: Si el usuario cierra el navegador o cancela la descarga a la mitad
-        fileStream.destroy();
-        try {
-          if (fs.existsSync(expectedFilePath))
-            await unlinkAsync(expectedFilePath);
-          console.log(
-            `[Download] Archivo temporal limpiado tras cancelación: ${expectedFilePath}`,
-          );
-        } catch (e) {
-          console.error("Error borrando temp (cancel):", e);
-        }
-      },
-    });
+    // Nota: No podemos mandar el "Content-Length" porque no sabemos cuánto pesa hasta que termina de bajar
+    headers.set("Transfer-Encoding", "chunked");
 
     return new NextResponse(responseStream, { headers });
   } catch (error: unknown) {
-    console.error("Error Download:", error);
-
-    // Extraemos el mensaje de forma segura
     const errorMessage =
       error instanceof Error ? error.message : "Error desconocido";
-
-    // Intentar limpiar si falló
-    try {
-      if (fs.existsSync(expectedFilePath)) await unlinkAsync(expectedFilePath);
-    } catch {}
-
+    console.error("Error Piping:", errorMessage);
     return NextResponse.json(
-      { error: "Fallo en la descarga", details: errorMessage },
+      { error: "Fallo en el streaming", details: errorMessage },
       { status: 500 },
     );
   }
