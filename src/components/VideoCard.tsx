@@ -128,11 +128,17 @@ export default function VideoCard({
                   disabled={downloadingFormat !== null}
                   className="w-full appearance-none bg-white/5 border border-white/10 rounded-lg text-xs text-gray-300 py-1.5 pl-3 pr-8 outline-none hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
+                  <option value="2160" className="bg-gray-900">
+                    4K (Ultra HD) - Lento
+                  </option>
+                  <option value="1080" className="bg-gray-900">
+                    1080p (FHD) - Lento
+                  </option>
                   <option value="720" className="bg-gray-900">
-                    720p (HD)
+                    720p (HD) - Rápido
                   </option>
                   <option value="480" className="bg-gray-900">
-                    480p (SD)
+                    480p (SD) - Rápido
                   </option>
                   <option value="360" className="bg-gray-900">
                     360p (Data Saver)
