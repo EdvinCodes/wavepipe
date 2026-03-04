@@ -70,7 +70,7 @@ export default function Home() {
     }
   };
 
-  const handleDownload = (format: "mp3" | "mp4") => {
+  const handleDownload = (format: "mp3" | "mp4", quality: string = "720") => {
     if (!currentUrl) return;
 
     setDownloadingFormat(format);
@@ -79,14 +79,13 @@ export default function Home() {
       { description: "Starting download process..." },
     );
 
-    // Creamos el enlace invisible para activar la descarga del backend
+    // NUEVO: Añadimos la calidad a la URL
     const link = document.createElement("a");
-    link.href = `/api/download?url=${encodeURIComponent(currentUrl)}&format=${format}`;
+    link.href = `/api/download?url=${encodeURIComponent(currentUrl)}&format=${format}&quality=${quality}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
-    // Guardar en Historial
     if (data) {
       addToHistory({
         title: data.title,
@@ -96,7 +95,6 @@ export default function Home() {
       });
     }
 
-    // Feedback visual
     setTimeout(() => {
       setDownloadingFormat(null);
       toast.success("Download Started! 🚀", {

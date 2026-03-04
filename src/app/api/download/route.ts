@@ -6,6 +6,7 @@ import fs from "fs";
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get("url");
   const format = request.nextUrl.searchParams.get("format") || "mp3";
+  const quality = request.nextUrl.searchParams.get("quality") || "720";
 
   if (!url)
     return NextResponse.json({ error: "URL requerida" }, { status: 400 });
@@ -59,7 +60,6 @@ export async function GET(request: NextRequest) {
   if (hasCookies) args.push("--cookies", cookiesPath);
 
   if (format === "mp3") {
-    // Audio: Extraemos audio al vuelo
     args.push(
       "--extract-audio",
       "--audio-format",
@@ -68,8 +68,7 @@ export async function GET(request: NextRequest) {
       "0",
     );
   } else {
-    // Video: Para streaming en MP4 sin fallos de FFmpeg, pedimos el mejor archivo ya pre-mezclado por Youtube (suele ser 720p)
-    args.push("--format", "best[ext=mp4]/best");
+    args.push("--format", `best[height<=${quality}][ext=mp4]/best`);
   }
 
   args.push(url);

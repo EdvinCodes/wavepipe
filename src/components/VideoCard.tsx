@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { Music, Video, Clock, Loader2 } from "lucide-react"; // Importamos Loader2
+import { Music, Video, Clock, Loader2, ChevronDown } from "lucide-react";
 import Image from "next/image";
 
 interface VideoCardProps {
@@ -9,8 +10,8 @@ interface VideoCardProps {
   title: string;
   author: string;
   duration: string;
-  onDownload: (format: "mp3" | "mp4") => void;
-  downloadingFormat: "mp3" | "mp4" | null; // <--- NUEVA PROP
+  onDownload: (format: "mp3" | "mp4", quality?: string) => void;
+  downloadingFormat: "mp3" | "mp4" | null;
 }
 
 export default function VideoCard({
@@ -19,8 +20,10 @@ export default function VideoCard({
   author,
   duration,
   onDownload,
-  downloadingFormat, // <--- La recibimos aquí
+  downloadingFormat,
 }: VideoCardProps) {
+  const [quality, setQuality] = useState("720");
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -56,13 +59,13 @@ export default function VideoCard({
           </div>
 
           <div className="grid grid-cols-2 gap-3 mt-2">
-            {/* --- BOTÓN MP3 --- */}
+            {/* --- BOTÓN MP3 (Se queda igual) --- */}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => onDownload("mp3")}
-              disabled={downloadingFormat !== null} // Deshabilita si algo está bajando
-              className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden
+              disabled={downloadingFormat !== null}
+              className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden h-24
                 ${
                   downloadingFormat === "mp3"
                     ? "bg-purple-500/40 border-purple-500"
@@ -86,35 +89,58 @@ export default function VideoCard({
               )}
             </motion.button>
 
-            {/* --- BOTÓN MP4 --- */}
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onDownload("mp4")}
-              disabled={downloadingFormat !== null}
-              className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden
-                ${
-                  downloadingFormat === "mp4"
-                    ? "bg-blue-500/40 border-blue-500"
-                    : "bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20"
-                }`}
-            >
-              {downloadingFormat === "mp4" ? (
-                <>
-                  <Loader2 className="w-5 h-5 text-white animate-spin" />
-                  <span className="text-xs font-bold text-white">
-                    Mixing...
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Video className="w-5 h-5 text-blue-400 group-hover:text-blue-300" />
-                  <span className="text-xs font-bold text-blue-200">
-                    MP4 Video
-                  </span>
-                </>
-              )}
-            </motion.button>
+            {/* --- BOTÓN MP4 + SELECTOR DE CALIDAD --- */}
+            <div className="flex flex-col gap-2">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => onDownload("mp4", quality)} // <--- Enviamos la calidad elegida
+                disabled={downloadingFormat !== null}
+                className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden h-24
+                  ${
+                    downloadingFormat === "mp4"
+                      ? "bg-blue-500/40 border-blue-500"
+                      : "bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20"
+                  }`}
+              >
+                {downloadingFormat === "mp4" ? (
+                  <>
+                    <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    <span className="text-xs font-bold text-white">
+                      Streaming...
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Video className="w-5 h-5 text-blue-400 group-hover:text-blue-300" />
+                    <span className="text-xs font-bold text-blue-200">
+                      MP4 Video
+                    </span>
+                  </>
+                )}
+              </motion.button>
+
+              {/* El Selector visual (Glassmorphism) */}
+              <div className="relative">
+                <select
+                  value={quality}
+                  onChange={(e) => setQuality(e.target.value)}
+                  disabled={downloadingFormat !== null}
+                  className="w-full appearance-none bg-white/5 border border-white/10 rounded-lg text-xs text-gray-300 py-1.5 pl-3 pr-8 outline-none hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="720" className="bg-gray-900">
+                    720p (HD)
+                  </option>
+                  <option value="480" className="bg-gray-900">
+                    480p (SD)
+                  </option>
+                  <option value="360" className="bg-gray-900">
+                    360p (Data Saver)
+                  </option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1.5 w-3 h-3 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
           </div>
         </div>
       </div>
