@@ -67,15 +67,7 @@ export async function GET(request: NextRequest) {
   const hasCookies = fs.existsSync(cookiesPath);
 
   // --- ARGUMENTOS ---
-  const args = [
-    "--dump-single-json",
-    "--flat-playlist",
-    "--no-warnings",
-
-    // TRUCO 1: Falsificar ser un navegador real
-    "--user-agent",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  ];
+  const args = ["--dump-single-json", "--flat-playlist", "--no-warnings"];
 
   // TRUCO 2: Cookies (Si existen)
   if (hasCookies) {

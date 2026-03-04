@@ -70,18 +70,32 @@ export default function Home() {
     }
   };
 
-  const handleDownload = (format: "mp3" | "mp4", quality: string = "720") => {
+  const handleDownload = (
+    format: "mp3" | "mp4",
+    quality: string = "720",
+    start?: string,
+    end?: string,
+  ) => {
     if (!currentUrl) return;
 
     setDownloadingFormat(format);
     const toastId = toast.loading(
       format === "mp3" ? "Extracting Audio..." : "Getting Video Stream...",
-      { description: "Starting download process..." },
+      {
+        description:
+          start || end
+            ? "Trimming video section..."
+            : "Starting download process...",
+      },
     );
 
-    // NUEVO: Añadimos la calidad a la URL
+    // Construimos la URL inyectando los parámetros de tiempo si existen
+    let downloadUrl = `/api/download?url=${encodeURIComponent(currentUrl)}&format=${format}&quality=${quality}`;
+    if (start) downloadUrl += `&start=${encodeURIComponent(start)}`;
+    if (end) downloadUrl += `&end=${encodeURIComponent(end)}`;
+
     const link = document.createElement("a");
-    link.href = `/api/download?url=${encodeURIComponent(currentUrl)}&format=${format}&quality=${quality}`;
+    link.href = downloadUrl;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

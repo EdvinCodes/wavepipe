@@ -10,7 +10,12 @@ interface VideoCardProps {
   title: string;
   author: string;
   duration: string;
-  onDownload: (format: "mp3" | "mp4", quality?: string) => void;
+  onDownload: (
+    format: "mp3" | "mp4",
+    quality?: string,
+    start?: string,
+    end?: string,
+  ) => void;
   downloadingFormat: "mp3" | "mp4" | null;
 }
 
@@ -23,6 +28,8 @@ export default function VideoCard({
   downloadingFormat,
 }: VideoCardProps) {
   const [quality, setQuality] = useState("720");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
 
   return (
     <motion.div
@@ -59,11 +66,11 @@ export default function VideoCard({
           </div>
 
           <div className="grid grid-cols-2 gap-3 mt-2">
-            {/* --- BOTÓN MP3 (Se queda igual) --- */}
+            {/* --- BOTÓN MP3 --- */}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => onDownload("mp3")}
+              onClick={() => onDownload("mp3", "720", start, end)} // <--- Pasamos start y end
               disabled={downloadingFormat !== null}
               className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden h-24
                 ${
@@ -89,12 +96,12 @@ export default function VideoCard({
               )}
             </motion.button>
 
-            {/* --- BOTÓN MP4 + SELECTOR DE CALIDAD --- */}
+            {/* --- BOTÓN MP4 + SELECTORES --- */}
             <div className="flex flex-col gap-2">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => onDownload("mp4", quality)} // <--- Enviamos la calidad elegida
+                onClick={() => onDownload("mp4", quality, start, end)} // <--- Pasamos start y end
                 disabled={downloadingFormat !== null}
                 className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden h-24
                   ${
@@ -120,7 +127,7 @@ export default function VideoCard({
                 )}
               </motion.button>
 
-              {/* El Selector visual (Glassmorphism) */}
+              {/* Selector de Calidad (se queda igual) */}
               <div className="relative">
                 <select
                   value={quality}
@@ -145,6 +152,26 @@ export default function VideoCard({
                   </option>
                 </select>
                 <ChevronDown className="absolute right-2 top-1.5 w-3 h-3 text-gray-400 pointer-events-none" />
+              </div>
+
+              {/* NUEVO: Inputs de Corte (Trimming) */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Inicio (ej: 0:15)"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                  disabled={downloadingFormat !== null}
+                  className="w-1/2 bg-white/5 border border-white/10 rounded-lg text-xs text-center text-gray-300 py-1.5 outline-none hover:bg-white/10 transition-colors focus:border-blue-500/50 placeholder-gray-600"
+                />
+                <input
+                  type="text"
+                  placeholder="Fin (ej: 2:30)"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                  disabled={downloadingFormat !== null}
+                  className="w-1/2 bg-white/5 border border-white/10 rounded-lg text-xs text-center text-gray-300 py-1.5 outline-none hover:bg-white/10 transition-colors focus:border-blue-500/50 placeholder-gray-600"
+                />
               </div>
             </div>
           </div>

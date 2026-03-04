@@ -11,6 +11,8 @@ export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get("url");
   const format = request.nextUrl.searchParams.get("format") || "mp3";
   const quality = request.nextUrl.searchParams.get("quality") || "720";
+  const start = request.nextUrl.searchParams.get("start");
+  const end = request.nextUrl.searchParams.get("end");
 
   if (!url)
     return NextResponse.json({ error: "URL requerida" }, { status: 400 });
@@ -32,13 +34,7 @@ export async function GET(request: NextRequest) {
   // 1. Obtener título
   let userFilename = `download.${format}`;
   try {
-    const titleArgs = [
-      "--print",
-      "title",
-      "--no-warnings",
-      "--user-agent",
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    ];
+    const titleArgs = ["--print", "title", "--no-warnings", "--rm-cache-dir"];
     if (hasCookies) titleArgs.push("--cookies", cookiesPath);
     titleArgs.push(url);
 
@@ -53,13 +49,16 @@ export async function GET(request: NextRequest) {
   }
 
   // --- DECISIÓN DEL SISTEMA HÍBRIDO ---
-  // Si piden 1080p o 4K en vídeo, necesitamos usar el disco duro + FFmpeg
+  // IMPORTANTE: Si hay "start" o "end", FORZAMOS la Vía Premium (Disco) porque
+  // FFmpeg necesita escribir en el disco para recortar con precisión.
   const isPremiumQuality =
-    (quality === "1080" || quality === "2160") && format === "mp4";
+    ((quality === "1080" || quality === "2160") && format === "mp4") ||
+    !!start ||
+    !!end;
 
   if (isPremiumQuality) {
     console.log(
-      `[Híbrido] Iniciando VÍA PREMIUM (Disco+FFmpeg) para: ${userFilename} a ${quality}p`,
+      `[Híbrido] Iniciando VÍA PREMIUM (Disco+FFmpeg) para: ${userFilename}`,
     );
 
     const tempId = Math.random().toString(36).substring(7);
@@ -68,35 +67,60 @@ export async function GET(request: NextRequest) {
       tempDir,
       `wavepipe_${tempId}.%(ext)s`,
     );
-    const expectedFilePath = path.join(tempDir, `wavepipe_${tempId}.mp4`);
+    // FIX: Ahora soporta generar MP3 recortados correctamente
+    const expectedFilePath = path.join(
+      tempDir,
+      `wavepipe_${tempId}.${format === "mp3" ? "mp3" : "mp4"}`,
+    );
 
     const args = [
       "--no-warnings",
+      "--rm-cache-dir",
       "--output",
       tempFilePathTemplate,
       "--embed-thumbnail",
       "--add-metadata",
-      "--user-agent",
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     ];
 
     if (hasCookies) args.push("--cookies", cookiesPath);
 
-    // Pedimos el mejor vídeo hasta la calidad elegida + el mejor audio, y forzamos a mezclar en MP4
-    args.push(
-      "--format",
-      `bestvideo[height<=${quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${quality}][ext=mp4]/best`,
-    );
-    args.push("--merge-output-format", "mp4");
+    if (format === "mp3") {
+      args.push(
+        "--extract-audio",
+        "--audio-format",
+        "mp3",
+        "--audio-quality",
+        "0",
+      );
+    } else {
+      args.push(
+        "--format",
+        `bestvideo[height<=${quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${quality}][ext=mp4]/best`,
+      );
+      args.push("--merge-output-format", "mp4");
+    }
+
+    // --- EL FIX DEL RECORTE ---
+    if (start || end) {
+      const s = start || "0";
+      const e = end || "inf";
+      args.push("--download-sections", `*${s}-${e}`);
+      // CLAVE: Obliga a FFmpeg a cortar el vídeo exactamente donde le pedimos
+      args.push("--force-keyframes-at-cuts");
+    }
+
     args.push(url);
 
     try {
-      // Esperamos a que FFmpeg termine de coser el archivo en disco
       await new Promise((resolve, reject) => {
+        let errorLog = "";
         const process = spawn(ytPath, args);
+        process.stderr.on("data", (chunk) => {
+          errorLog += chunk.toString();
+        });
         process.on("close", (code) => {
           if (code === 0) resolve(true);
-          else reject(new Error(`yt-dlp código ${code}`));
+          else reject(new Error(`yt-dlp código ${code}. Detalle: ${errorLog}`));
         });
         process.on("error", reject);
       });
@@ -112,7 +136,10 @@ export async function GET(request: NextRequest) {
         "Content-Disposition",
         `attachment; filename="${encodeURIComponent(userFilename)}"`,
       );
-      headers.set("Content-Type", "video/mp4");
+      headers.set(
+        "Content-Type",
+        format === "mp3" ? "audio/mpeg" : "video/mp4",
+      );
       headers.set("Content-Length", stats.size.toString());
 
       const responseStream = new ReadableStream({
@@ -146,6 +173,7 @@ export async function GET(request: NextRequest) {
     } catch (error: unknown) {
       const errMsg =
         error instanceof Error ? error.message : "Error desconocido";
+      console.error(errMsg);
       try {
         if (fs.existsSync(expectedFilePath))
           await unlinkAsync(expectedFilePath);
@@ -161,13 +189,7 @@ export async function GET(request: NextRequest) {
       `[Híbrido] Iniciando VÍA RÁPIDA (Piping) para: ${userFilename}`,
     );
 
-    const args = [
-      "--no-warnings",
-      "--output",
-      "-",
-      "--user-agent",
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    ];
+    const args = ["--no-warnings", "--rm-cache-dir", "--output", "-"];
 
     if (hasCookies) args.push("--cookies", cookiesPath);
 
@@ -182,6 +204,8 @@ export async function GET(request: NextRequest) {
     } else {
       args.push("--format", `best[height<=${quality}][ext=mp4]/best`);
     }
+
+    // Nota: Ya no hay recortes aquí, todo recorte es forzado a la Vía Premium
 
     args.push(url);
 
