@@ -21,6 +21,13 @@ interface TrackInfo {
   duration: string;
 }
 
+interface YtDlpEntry {
+  id: string;
+  title: string;
+  duration?: number;
+  thumbnails?: { url: string }[];
+}
+
 const formatDuration = (seconds: number): string => {
   if (!seconds) return "00:00";
   const hh = Math.floor(seconds / 3600);
@@ -51,7 +58,7 @@ export async function GET(request: NextRequest) {
   if (!fs.existsSync(ytPath)) {
     return NextResponse.json(
       { error: "yt-dlp no encontrado en el servidor" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -105,11 +112,12 @@ export async function GET(request: NextRequest) {
       duration: isPlaylist
         ? formatDuration(
             data.entries?.reduce(
-              (sum: number, t: any) => sum + (t.duration || 0),
-              0
-            )
+              // Aseguramos que si t.duration no existe o es NaN, sume 0
+              (sum: number, t: YtDlpEntry) => sum + (Number(t.duration) || 0),
+              0,
+            ) || 0, // Y por si entries está vacío
           )
-        : formatDuration(data.duration),
+        : formatDuration(Number(data.duration) || 0),
       isPlaylist,
       totalVideos: isPlaylist
         ? data.entry_count || data.entries?.length || 0
@@ -118,24 +126,26 @@ export async function GET(request: NextRequest) {
 
     if (isPlaylist) {
       const tracks: TrackInfo[] =
-        data.entries?.map((t: any) => ({
+        data.entries?.map((t: YtDlpEntry) => ({
           id: t.id,
           title: t.title,
-          duration: formatDuration(t.duration),
+          duration: formatDuration(t.duration || 0),
         })) || [];
 
       return NextResponse.json({ ...info, tracks });
     }
 
     return NextResponse.json(info);
-  } catch (err: any) {
-    // Mejoramos el log de error para que Render nos diga la verdad
-    const errorMsg = err.stderr || err.message || "Error desconocido";
+  } catch (err: unknown) {
+    // Le decimos a TS qué forma esperamos que tenga el error de execFile
+    const execErr = err as { stderr?: string; message?: string };
+    const errorMsg = execErr.stderr || execErr.message || "Error desconocido";
+
     console.error("API Info Error:", errorMsg);
 
     return NextResponse.json(
       { error: "Falló al obtener info", details: errorMsg },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

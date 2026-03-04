@@ -13,13 +13,13 @@ interface VideoCardProps {
   downloadingFormat: "mp3" | "mp4" | null; // <--- NUEVA PROP
 }
 
-export default function VideoCard({ 
-  thumbnail, 
-  title, 
-  author, 
-  duration, 
-  onDownload, 
-  downloadingFormat // <--- La recibimos aquí
+export default function VideoCard({
+  thumbnail,
+  title,
+  author,
+  duration,
+  onDownload,
+  downloadingFormat, // <--- La recibimos aquí
 }: VideoCardProps) {
   return (
     <motion.div
@@ -30,13 +30,12 @@ export default function VideoCard({
       className="w-full max-w-2xl mt-8 overflow-hidden glass rounded-3xl"
     >
       <div className="flex flex-col md:flex-row">
-        
         {/* Carátula */}
         <div className="relative w-full md:w-1/2 h-48 md:h-auto group cursor-pointer overflow-hidden">
-          <Image 
-            src={thumbnail} 
-            alt={title} 
-            fill 
+          <Image
+            src={thumbnail}
+            alt={title}
+            fill
             sizes="(max-width: 768px) 100vw, 50vw"
             className="object-cover transition-transform duration-500 group-hover:scale-110"
           />
@@ -50,12 +49,13 @@ export default function VideoCard({
         {/* Info y Botones */}
         <div className="flex flex-col justify-between p-6 md:w-1/2 gap-4">
           <div>
-            <h3 className="text-xl font-bold text-white line-clamp-2 leading-tight">{title}</h3>
+            <h3 className="text-xl font-bold text-white line-clamp-2 leading-tight">
+              {title}
+            </h3>
             <p className="text-sm text-gray-400 mt-2 font-medium">{author}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 mt-2">
-            
             {/* --- BOTÓN MP3 --- */}
             <motion.button
               whileHover={{ scale: 1.05 }}
@@ -63,20 +63,25 @@ export default function VideoCard({
               onClick={() => onDownload("mp3")}
               disabled={downloadingFormat !== null} // Deshabilita si algo está bajando
               className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden
-                ${downloadingFormat === "mp3" 
-                  ? "bg-purple-500/40 border-purple-500" 
-                  : "bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20"
+                ${
+                  downloadingFormat === "mp3"
+                    ? "bg-purple-500/40 border-purple-500"
+                    : "bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20"
                 }`}
             >
               {downloadingFormat === "mp3" ? (
                 <>
                   <Loader2 className="w-5 h-5 text-white animate-spin" />
-                  <span className="text-xs font-bold text-white">Cooking...</span>
+                  <span className="text-xs font-bold text-white">
+                    Cooking...
+                  </span>
                 </>
               ) : (
                 <>
                   <Music className="w-5 h-5 text-purple-400 group-hover:text-purple-300" />
-                  <span className="text-xs font-bold text-purple-200">MP3 Audio</span>
+                  <span className="text-xs font-bold text-purple-200">
+                    MP3 Audio
+                  </span>
                 </>
               )}
             </motion.button>
@@ -88,24 +93,28 @@ export default function VideoCard({
               onClick={() => onDownload("mp4")}
               disabled={downloadingFormat !== null}
               className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-colors group relative overflow-hidden
-                ${downloadingFormat === "mp4" 
-                  ? "bg-blue-500/40 border-blue-500" 
-                  : "bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20"
+                ${
+                  downloadingFormat === "mp4"
+                    ? "bg-blue-500/40 border-blue-500"
+                    : "bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20"
                 }`}
             >
               {downloadingFormat === "mp4" ? (
                 <>
                   <Loader2 className="w-5 h-5 text-white animate-spin" />
-                  <span className="text-xs font-bold text-white">Mixing...</span>
+                  <span className="text-xs font-bold text-white">
+                    Mixing...
+                  </span>
                 </>
               ) : (
                 <>
                   <Video className="w-5 h-5 text-blue-400 group-hover:text-blue-300" />
-                  <span className="text-xs font-bold text-blue-200">MP4 Video</span>
+                  <span className="text-xs font-bold text-blue-200">
+                    MP4 Video
+                  </span>
                 </>
               )}
             </motion.button>
-
           </div>
         </div>
       </div>

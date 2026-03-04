@@ -5,7 +5,6 @@ export default function VideoSkeleton() {
   return (
     <div className="w-full max-w-2xl mt-8 overflow-hidden glass rounded-3xl animate-pulse">
       <div className="flex flex-col md:flex-row h-full">
-        
         {/* Simulación de la Carátula (cuadrado gris pulsante) */}
         <div className="w-full md:w-1/2 h-48 md:h-auto bg-white/10"></div>
 

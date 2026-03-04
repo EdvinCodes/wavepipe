@@ -21,18 +21,22 @@ export default function SearchInput({ onSearch, isLoading }: SearchInputProps) {
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className={`relative w-full max-w-2xl transition-all duration-300 ${isFocused ? "scale-[1.02]" : "scale-100"}`}
     >
-      <div className={`relative flex items-center w-full h-16 px-4 overflow-hidden rounded-2xl border transition-all duration-300
-        ${isFocused 
-          ? "bg-white/10 border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.3)]" 
-          : "bg-white/5 border-white/10 hover:border-white/20"
+      <div
+        className={`relative flex items-center w-full h-16 px-4 overflow-hidden rounded-2xl border transition-all duration-300
+        ${
+          isFocused
+            ? "bg-white/10 border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.3)]"
+            : "bg-white/5 border-white/10 hover:border-white/20"
         } backdrop-blur-md`}
       >
-        <Search className={`w-6 h-6 mr-4 transition-colors ${isFocused ? "text-blue-400" : "text-gray-500"}`} />
+        <Search
+          className={`w-6 h-6 mr-4 transition-colors ${isFocused ? "text-blue-400" : "text-gray-500"}`}
+        />
 
         <input
           type="text"

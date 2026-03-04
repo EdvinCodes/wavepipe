@@ -2,7 +2,7 @@
 
 > The ultimate open-source YouTube downloader. Built with the modern web stack.
 
-![WavePipe Preview](./public/preview.png) 
+![WavePipe Preview](./public/preview.png)
 
 ## ✨ Features
 
@@ -36,12 +36,14 @@ This project requires a backend component (yt-dlp), so it cannot be hosted on Ve
 ### Installation
 
 1.  Clone the repo:
+
     ```bash
     git clone https://github.com/edvincodes/wavepipe.git
     cd wavepipe
     ```
 
 2.  Install dependencies:
+
     ```bash
     pnpm install
     # or npm install
@@ -53,6 +55,7 @@ This project requires a backend component (yt-dlp), so it cannot be hosted on Ve
     - Place it inside the `/bin` folder.
 
 4.  Run the development server:
+
     ```bash
     pnpm dev
     ```

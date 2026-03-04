@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   if (!fs.existsSync(ytPath)) {
     return NextResponse.json(
       { error: "Binario no encontrado" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
   // Archivo final que esperamos encontrar (mp3 o mp4)
   const expectedFilePath = path.join(
     tempDir,
-    `wavepipe_${tempId}.${format === "mp3" ? "mp3" : "mp4"}`
+    `wavepipe_${tempId}.${format === "mp3" ? "mp3" : "mp4"}`,
   );
 
   // 3. Obtener el título (para el nombre del archivo al usuario)
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
       titleData += chunk.toString();
     const cleanTitle = titleData.trim().replace(/[^\w\s\-\.]/gi, "") || "video";
     userFilename = `${cleanTitle}.${format}`;
-  } catch (e) {
+  } catch {
     console.warn("No se pudo obtener título, usando nombre genérico");
   }
 
@@ -95,14 +95,14 @@ export async function GET(request: NextRequest) {
       "--audio-format",
       "mp3",
       "--audio-quality",
-      "0"
+      "0",
     );
   } else {
     // Video: Descargar lo mejor y asegurar contenedor MP4
     // Esto requiere FFmpeg para mezclar video+audio
     args.push(
       "--format",
-      "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+      "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
     );
     args.push("--merge-output-format", "mp4");
   }
@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
 
       // Para debuggear si falla
       process.stderr.on("data", (d) =>
-        console.log("YT-DLP Error/Log:", d.toString())
+        console.log("YT-DLP Error/Log:", d.toString()),
       );
 
       process.on("close", (code) => {
@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
     // 6. Verificar que el archivo existe
     if (!fs.existsSync(expectedFilePath)) {
       throw new Error(
-        "El archivo no se generó correctamente. ¿Tienes FFmpeg instalado?"
+        "El archivo no se generó correctamente. ¿Tienes FFmpeg instalado?",
       );
     }
 
@@ -141,42 +141,69 @@ export async function GET(request: NextRequest) {
     const headers = new Headers();
     headers.set(
       "Content-Disposition",
-      `attachment; filename="${encodeURIComponent(userFilename)}"`
+      `attachment; filename="${encodeURIComponent(userFilename)}"`,
     );
     headers.set("Content-Type", format === "mp3" ? "audio/mpeg" : "video/mp4");
     headers.set("Content-Length", stats.size.toString());
 
-    // 8. Crear Stream de respuesta y borrar al terminar
+    // 8. Crear Stream de respuesta y borrar al terminar o cancelar
     const responseStream = new ReadableStream({
       start(controller) {
         fileStream.on("data", (chunk) => controller.enqueue(chunk));
-        fileStream.on("end", () => {
+
+        fileStream.on("end", async () => {
           controller.close();
-          // IMPORTANTE: Borrar el archivo temporal para no llenar el disco
-          unlinkAsync(expectedFilePath).catch((e) =>
-            console.error("Error borrando temp:", e)
-          );
+          // IMPORTANTE: Borrar al terminar el stream
+          try {
+            if (fs.existsSync(expectedFilePath))
+              await unlinkAsync(expectedFilePath);
+          } catch (e) {
+            console.error("Error borrando temp (end):", e);
+          }
         });
-        fileStream.on("error", (err) => {
+
+        fileStream.on("error", async (err) => {
           controller.error(err);
-          unlinkAsync(expectedFilePath).catch((e) =>
-            console.error("Error borrando temp:", e)
-          );
+          // IMPORTANTE: Borrar si hay error de lectura
+          try {
+            if (fs.existsSync(expectedFilePath))
+              await unlinkAsync(expectedFilePath);
+          } catch (e) {
+            console.error("Error borrando temp (error):", e);
+          }
         });
+      },
+      cancel: async () => {
+        // IMPORTANTE: Si el usuario cierra el navegador o cancela la descarga a la mitad
+        fileStream.destroy();
+        try {
+          if (fs.existsSync(expectedFilePath))
+            await unlinkAsync(expectedFilePath);
+          console.log(
+            `[Download] Archivo temporal limpiado tras cancelación: ${expectedFilePath}`,
+          );
+        } catch (e) {
+          console.error("Error borrando temp (cancel):", e);
+        }
       },
     });
 
     return new NextResponse(responseStream, { headers });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error Download:", error);
+
+    // Extraemos el mensaje de forma segura
+    const errorMessage =
+      error instanceof Error ? error.message : "Error desconocido";
+
     // Intentar limpiar si falló
     try {
       if (fs.existsSync(expectedFilePath)) await unlinkAsync(expectedFilePath);
     } catch {}
 
     return NextResponse.json(
-      { error: "Fallo en la descarga", details: error.message },
-      { status: 500 }
+      { error: "Fallo en la descarga", details: errorMessage },
+      { status: 500 },
     );
   }
 }

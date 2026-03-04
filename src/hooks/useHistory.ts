@@ -25,7 +25,7 @@ export function useHistory() {
         try {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) setHistory(parsed);
-        } catch  {
+        } catch {
           localStorage.removeItem("wavepipe_history");
         }
       }, 0);
@@ -34,25 +34,30 @@ export function useHistory() {
 
   // Función para añadir
   const addToHistory = (item: Omit<HistoryItem, "id" | "date">) => {
-    // Generamos ID único 
-    const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID 
-      ? crypto.randomUUID() 
-      : Math.random().toString(36).substring(2, 9);
+    const uniqueId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).substring(2, 9);
 
     const newItem: HistoryItem = {
       ...item,
       id: uniqueId,
-      date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      date: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
     };
 
     setHistory((prevHistory) => {
-      // Mantenemos solo los últimos 50
-      const updated = [newItem, ...prevHistory].slice(0, 50);
+      // 1. Filtramos para eliminar si la URL ya estaba en el historial (evitar duplicados)
+      const filteredHistory = prevHistory.filter((h) => h.url !== item.url);
+
+      // 2. Añadimos el nuevo al principio y limitamos a 50
+      const updated = [newItem, ...filteredHistory].slice(0, 50);
       localStorage.setItem("wavepipe_history", JSON.stringify(updated));
       return updated;
     });
   };
-
   const clearHistory = () => {
     setHistory([]);
     localStorage.removeItem("wavepipe_history");
@@ -64,6 +69,6 @@ export function useHistory() {
     addToHistory,
     clearHistory,
     isOpen,
-    setIsOpen
+    setIsOpen,
   };
 }
