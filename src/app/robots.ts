@@ -1,12 +1,15 @@
 import { MetadataRoute } from "next";
 
+const BASE_URL =
+  process.env.NEXT_PUBLIC_BASE_URL || "https://wavepipe.onrender.com";
+
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: "/api/", // No queremos que Google indexe nuestras APIs
+      disallow: "/api/",
     },
-    sitemap: "https://wavepipe.onrender.com/sitemap.xml", // Cambia por tu dominio futuro
+    sitemap: `${BASE_URL}/sitemap.xml`,
   };
 }

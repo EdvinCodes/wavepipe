@@ -57,12 +57,10 @@ export const metadata: Metadata = {
     description: "Download YouTube content without the hassle.",
     creator: "@edvincodes",
   },
-  // FIX: favicon.ico sí existe, icon.png no existía
   icons: {
     icon: "/favicon.ico",
     apple: "/favicon.ico",
   },
-  manifest: "/manifest.json",
 };
 
 export default function RootLayout({

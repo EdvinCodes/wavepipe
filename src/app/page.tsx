@@ -92,33 +92,6 @@ export default function Home() {
 
     const progressId = Math.random().toString(36).substring(7);
 
-    const evtSource = new EventSource(`/api/progress?id=${progressId}`);
-    evtSourceRef.current = evtSource; // FIX: Guardar referencia para cleanup
-
-    evtSource.onmessage = (event) => {
-      // FIX: Renombrado a eventData para no colisionar con el estado 'data'
-      const eventData = event.data;
-      if (
-        eventData === "DONE" ||
-        eventData === "ERROR" ||
-        eventData === "100%"
-      ) {
-        evtSource.close();
-        evtSourceRef.current = null;
-        if (eventData === "DONE" || eventData === "100%") {
-          setProgress("Completado ✓");
-        }
-      } else {
-        setProgress(eventData);
-      }
-    };
-
-    // FIX: Manejar errores de conexión SSE
-    evtSource.onerror = () => {
-      evtSource.close();
-      evtSourceRef.current = null;
-    };
-
     const toastId = toast.loading(
       format === "mp3" ? "Extracting Audio..." : "Getting Video Stream...",
       {
@@ -128,6 +101,44 @@ export default function Home() {
             : "Starting download process...",
       },
     );
+
+    const evtSource = new EventSource(`/api/progress?id=${progressId}`);
+    evtSourceRef.current = evtSource;
+
+    evtSource.onmessage = (event) => {
+      const eventData = event.data;
+      if (eventData === "ERROR") {
+        evtSource.close();
+        evtSourceRef.current = null;
+        setDownloadingFormat(null);
+        setProgress(null);
+        toast.error("Download failed", {
+          id: toastId,
+          description: "The server could not process this video.",
+          duration: 5000,
+        });
+      } else if (eventData === "DONE" || eventData === "100%") {
+        evtSource.close();
+        evtSourceRef.current = null;
+        setProgress("Completado ✓");
+        setDownloadingFormat(null);
+        toast.success("Download complete! 🚀", {
+          id: toastId,
+          description: "Your file should be in your downloads folder.",
+          duration: 4000,
+        });
+        setTimeout(() => setProgress(null), 2000);
+      } else {
+        setProgress(eventData);
+      }
+    };
+
+    evtSource.onerror = () => {
+      evtSource.close();
+      evtSourceRef.current = null;
+      setDownloadingFormat(null);
+      setProgress(null);
+    };
 
     let downloadUrl = `/api/download?url=${encodeURIComponent(currentUrl)}&format=${format}&quality=${quality}&progressId=${progressId}`;
     if (start) downloadUrl += `&start=${encodeURIComponent(start)}`;
@@ -139,7 +150,6 @@ export default function Home() {
     link.click();
     document.body.removeChild(link);
 
-    // FIX: Guardar calidad en el historial
     if (data) {
       addToHistory({
         title: data.title,
@@ -149,16 +159,6 @@ export default function Home() {
         url: currentUrl,
       });
     }
-
-    setTimeout(() => {
-      setDownloadingFormat(null);
-      setTimeout(() => setProgress(null), 2000);
-      toast.success("Download Started! 🚀", {
-        id: toastId,
-        description: "Your browser should start the download shortly.",
-        duration: 4000,
-      });
-    }, 2000);
   };
 
   return (

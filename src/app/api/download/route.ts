@@ -57,11 +57,24 @@ export async function GET(request: NextRequest) {
     if (hasCookies) titleArgs.push("--cookies", cookiesPath);
     titleArgs.push(url);
 
-    const titleProcess = spawn(ytPath, titleArgs);
-    let titleData = "";
-    for await (const chunk of titleProcess.stdout)
-      titleData += chunk.toString();
-    const cleanTitle = titleData.trim().replace(/[^\w\s\-\.]/gi, "") || "video";
+    const titleData = await new Promise<string>((resolve, reject) => {
+      const titleProcess = spawn(ytPath, titleArgs);
+      let output = "";
+      titleProcess.stdout.on("data", (chunk) => {
+        output += chunk.toString();
+      });
+      titleProcess.stderr.on("data", (chunk) => {
+        output += chunk.toString();
+      });
+      titleProcess.on("close", (code) => {
+        if (code === 0) resolve(output);
+        else reject(new Error(`yt-dlp title exit ${code}`));
+      });
+      titleProcess.on("error", reject);
+    });
+
+    const cleanTitle =
+      titleData.trim().replace(/[^\w\s\-\.]/gi, "") || "video";
     userFilename = `${cleanTitle}.${format}`;
   } catch {
     console.warn("No se pudo obtener título.");
@@ -133,21 +146,27 @@ export async function GET(request: NextRequest) {
     try {
       await new Promise((resolve, reject) => {
         let errorLog = "";
-        const process = spawn(ytPath, args);
+        const ytProcess = spawn(ytPath, args);
 
-        // --- NUEVO: Capturamos el progreso ---
-        process.stdout.on("data", reportProgress);
-        process.stderr.on("data", (chunk) => {
-          reportProgress(chunk); // A veces yt-dlp manda el progreso por stderr
+        ytProcess.stdout.on("data", reportProgress);
+        ytProcess.stderr.on("data", (chunk) => {
+          reportProgress(chunk);
           errorLog += chunk.toString();
         });
 
-        process.on("close", (code) => {
-          if (progressId) progressMap.set(progressId, "DONE"); // Avisamos que terminó
-          if (code === 0) resolve(true);
-          else reject(new Error(`yt-dlp código ${code}. Detalle: ${errorLog}`));
+        ytProcess.on("close", (code) => {
+          if (code === 0) {
+            if (progressId) progressMap.set(progressId, "DONE");
+            resolve(true);
+          } else {
+            if (progressId) progressMap.set(progressId, "ERROR");
+            reject(new Error(`yt-dlp código ${code}. Detalle: ${errorLog}`));
+          }
         });
-        process.on("error", reject);
+        ytProcess.on("error", (err) => {
+          if (progressId) progressMap.set(progressId, "ERROR");
+          reject(err);
+        });
       });
 
       if (!fs.existsSync(expectedFilePath))
@@ -199,6 +218,7 @@ export async function GET(request: NextRequest) {
       const errMsg =
         error instanceof Error ? error.message : "Error desconocido";
       console.error(errMsg);
+      if (progressId) progressMap.set(progressId, "ERROR");
       try {
         if (fs.existsSync(expectedFilePath))
           await unlinkAsync(expectedFilePath);
@@ -239,15 +259,33 @@ export async function GET(request: NextRequest) {
 
       const responseStream = new ReadableStream({
         start(controller) {
+          let errorLog = "";
+
           ytProcess.stdout.on("data", (chunk) => {
-            reportProgress(chunk); // <--- NUEVO: Reportamos progreso al vuelo
             controller.enqueue(chunk);
           });
-          ytProcess.stdout.on("end", () => {
-            if (progressId) progressMap.set(progressId, "DONE");
-            controller.close();
+
+          ytProcess.stderr.on("data", (chunk) => {
+            reportProgress(chunk);
+            errorLog += chunk.toString();
           });
-          ytProcess.on("error", (err) => controller.error(err));
+
+          ytProcess.on("close", (code) => {
+            if (code === 0) {
+              if (progressId) progressMap.set(progressId, "DONE");
+              controller.close();
+            } else {
+              if (progressId) progressMap.set(progressId, "ERROR");
+              controller.error(
+                new Error(`yt-dlp código ${code}. Detalle: ${errorLog}`),
+              );
+            }
+          });
+
+          ytProcess.on("error", (err) => {
+            if (progressId) progressMap.set(progressId, "ERROR");
+            controller.error(err);
+          });
         },
         cancel() {
           ytProcess.kill("SIGKILL");
@@ -269,6 +307,7 @@ export async function GET(request: NextRequest) {
     } catch (error: unknown) {
       const errMsg =
         error instanceof Error ? error.message : "Error desconocido";
+      if (progressId) progressMap.set(progressId, "ERROR");
       return NextResponse.json(
         { error: "Fallo en el streaming", details: errMsg },
         { status: 500 },

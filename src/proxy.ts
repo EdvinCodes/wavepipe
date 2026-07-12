@@ -24,7 +24,7 @@ function cleanupStaleEntries(now: number) {
   }
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (
     !request.nextUrl.pathname.startsWith("/api/download") &&
     !request.nextUrl.pathname.startsWith("/api/info")
